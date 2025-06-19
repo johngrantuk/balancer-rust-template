@@ -1,0 +1,2 @@
+ethcontract_derive_fork::contract!(pub "abis/mainnet/dodoV1PoolPrototype.json", contract = DodoV1PoolPrototype);
+ethcontract_derive_fork::contract!(pub "abis/mainnet/dodoV1Registry.json", contract = DodoV1Registry);

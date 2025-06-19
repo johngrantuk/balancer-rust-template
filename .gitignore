@@ -1,0 +1,14 @@
+**/target
+.idea
+.vscode
+**/.DS_Store
+**/node_modules
+*.py
+venv
+update
+*.profraw
+*.ps1
+.env
+/*.json
+*.csv
+*.mm_profdata
