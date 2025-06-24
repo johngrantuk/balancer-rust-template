@@ -42,7 +42,7 @@ When implementing your AMM integration, you must adhere to these essential requi
 - **Safe Mathematics**: Use the provided `SafeU256` type for all mathematical operations. It handles overflow/underflow protection automatically. For other numeric types, use the `SafeMath` trait. `impl Into<SafeMathU256Result>` is a good type for an input argument for all functions for seamless error propagation
 
 ### Price Prediction Accuracy
-- **Conservative Estimates**: The `Swap::swap` function MUST NOT return an output amount larger than what would actually be received in a real transaction executed on the blockchain state of block N+1 (where N is the block for which the state was fetched)
+- **Conservative Estimates**: The `Swap::swap` function MUST NOT return an output amount larger than what would actually be received in a real transaction executed on the block N+1 (where N is the block for which the state was fetched)
 - **Precision Balance**: While being conservative, predictions should be as accurate as possible. Overly pessimistic estimates may cause your liquidity source to never be selected by the routing algorithm
 - **State Consistency**: All simulations must be performed on the exact same blockchain state that will be used for execution
 
