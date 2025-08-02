@@ -14,7 +14,6 @@ pub mod i256;
 pub mod u256;
 pub mod safe_math;
 pub mod amm_lib;
-pub mod dummy;
 
 pub type ChecksumAddress = common::ChecksumAddress;
 pub type U256 = primitive_types::U256;

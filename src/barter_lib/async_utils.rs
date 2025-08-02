@@ -1,5 +1,3 @@
-use std::future::{join, Future};
-
 pub trait AwaitableTuple {
     type Output;
     fn awaitable(self) -> Self::Output;
@@ -9,14 +7,14 @@ macro_rules! impl_awaitable_tuple {
     ($($name:ident),*) => {
         impl<$($name),*> AwaitableTuple for ($($name),*)
         where
-            $($name: Future),*
+            $($name: std::future::IntoFuture),*
         {
             type Output = impl Future<Output = ($($name::Output),*)>;
 
             fn awaitable(self) -> Self::Output {
                 #![allow(non_snake_case)]
                 let ($($name),*) = self;
-                join!($($name),*)
+                std::future::join!($($name.into_future()),*)
             }
         }
     }
@@ -27,9 +25,9 @@ macro_rules! impl_awaitable_array {
 
         impl<T> AwaitableTuple for [T; ${count($name)}]
         where
-            T: Future,
+            T: std::future::IntoFuture,
         {
-            type Output = impl Future<Output = [T::Output; ${count($name)}]>;
+            type Output = impl std::future::Future<Output = [T::Output; ${count($name)}]>;
 
             fn awaitable(self) -> Self::Output {
                 #![allow(non_snake_case)]
@@ -51,16 +49,16 @@ macro_rules! impl_tuple_array {
     }
 }
 
-impl<A>AwaitableTuple for (A,) where A: Future {
-    type Output = impl Future<Output = (A::Output, )>;
+impl<A>AwaitableTuple for (A,) where A: std::future::IntoFuture {
+    type Output = impl std::future::Future<Output = (A::Output, )>;
     fn awaitable(self) -> Self::Output {
         async move {
             (self.0.await, )
         }
     }
 }
-impl<T> AwaitableTuple for [T;1] where T:Future {
-    type Output = impl Future<Output = [T::Output; 1]>;
+impl<T> AwaitableTuple for [T;1] where T: std::future::IntoFuture {
+    type Output = impl std::future::Future<Output = [T::Output; 1]>;
     fn awaitable(self) -> Self::Output {
         let tuple: (T,) = self.into();
         async move {

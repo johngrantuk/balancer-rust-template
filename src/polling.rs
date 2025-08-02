@@ -1,26 +1,26 @@
-use web3::{transports::Http, Web3};
 use crate::barter_lib::async_utils::AwaitableTuple;
+use alloy::network::Network;
+use alloy::providers::Provider;
 
 pub mod dodo_v1 {
-    use ethcontract::BlockId;
     use num::FromPrimitive;
 
     use super::*;
-    use crate::{contracts::DodoV1PoolPrototype, types::dodo_v1::{FlowerData, PoolInfo}};
+    use crate::{contracts::DodoV1PoolContract, types::dodo_v1::{FlowerData, PoolInfo}};
 
-    pub async fn get_flower_data(web3: &Web3<Http>, pool: PoolInfo, block_id: BlockId) -> FlowerData {
-        let contract = DodoV1PoolPrototype::at(web3, pool.address.0);
+    pub async fn get_flower_data<P: Provider<N> + Clone, N: Network>(provider: P, pool: PoolInfo, block_number: u64) -> FlowerData {
+        let contract = DodoV1PoolContract::new(pool.address.into(), provider);
 
         let state = (
-            contract.k().block(block_id).call(),
-            contract.base_balance().block(block_id).call(),
-            contract.quote_balance().block(block_id).call(),
-            contract.get_oracle_price().block(block_id).call(),
-            contract.target_base_token_amount().block(block_id).call(),
-            contract.target_quote_token_amount().block(block_id).call(),
-            contract.r_status().block(block_id).call(),
-            contract.mt_fee_rate().block(block_id).call(),
-            contract.lp_fee_rate().block(block_id).call(),
+            contract._K_().block(block_number.into()).call(),
+            contract._BASE_BALANCE_().block(block_number.into()).call(),
+            contract._QUOTE_BALANCE_().block(block_number.into()).call(),
+            contract.getOraclePrice().block(block_number.into()).call(),
+            contract._TARGET_BASE_TOKEN_AMOUNT_().block(block_number.into()).call(),
+            contract._TARGET_QUOTE_TOKEN_AMOUNT_().block(block_number.into()).call(),
+            contract._R_STATUS_().block(block_number.into()).call(),
+            contract._MT_FEE_RATE_().block(block_number.into()).call(),
+            contract._LP_FEE_RATE_().block(block_number.into()).call(),
         ).awaitable().await;
 
         FlowerData {

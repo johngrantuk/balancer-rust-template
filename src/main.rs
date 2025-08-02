@@ -25,6 +25,8 @@
 // Compiled on rustc 1.89.0-nightly (6ccd44760 2025-06-08)
 
 use crate::{barter_lib::{amm_lib::ToExchanges, common::Swap, ChecksumAddress}, model::dodo_v1::SwapDirection};
+use alloy::{network::AnyNetwork, providers::{fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller}, ProviderBuilder, RootProvider}};
+use alloy_chains::NamedChain;
 
 mod barter_lib; // utility crate, do not modify
 
@@ -44,9 +46,9 @@ pub struct EnvConfig {
 async fn main() {
     dotenvy::dotenv_override().unwrap();
     let env_config: EnvConfig = envy::from_env().unwrap();
-    let web3 = web3::Web3::new(web3::transports::Http::new(&env_config.mainnet_rpc_url).unwrap());
+    let provider = create_multichain_alloy_provider(&env_config.mainnet_rpc_url, NamedChain::Mainnet).await;
     
-    let dodos = discovery::dodo_v1::get_all_pools(&web3).await;
+    let dodos = discovery::dodo_v1::get_all_pools(&provider).await;
 
     // use tx 0x0fe505f086ecd54ae3490dc0fd99de363ad635d53583bf7750ef30ad66f5a27f as reference
     let tx_block_number = 22637111;
@@ -55,8 +57,8 @@ async fn main() {
     let pool = ChecksumAddress::from_const("0x75c23271661d9d143dcb617222bc4bec783eff34");
 
     let dodo = dodos.iter().find(|x| x.address == pool).unwrap();
-    let block = ethcontract::BlockId::Number(ethcontract::BlockNumber::Number((tx_block_number - 1).into())); // tx in block N generally happens on a blockchain state of block N-1
-    let flower_data = polling::dodo_v1::get_flower_data(&web3, dodo.clone(), block).await;
+    let block = tx_block_number - 1; // tx in block N generally happens on a blockchain state of block N-1
+    let flower_data = polling::dodo_v1::get_flower_data(&provider, dodo.clone(), block).await;
     let exchange = flower_data.to_exchanges(&mut barter_lib::amm_lib::EmptyExchangeContext)
         .filter(|x| x.request.direction == SwapDirection::BaseToQuote)
         .next()
@@ -69,4 +71,14 @@ async fn main() {
     let encoded_calldata = execution::dodo_v1::encode(input, 1.into(), &exchange.meta);
 
     println!("Encoded calldata: {:#?}", encoded_calldata);
+}
+
+pub type MultichainAlloyProvider = FillProvider<JoinFill<alloy::providers::Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>, RootProvider<AnyNetwork>, AnyNetwork>;
+
+pub async fn create_multichain_alloy_provider(url: &str, chain: NamedChain) -> MultichainAlloyProvider{
+    ProviderBuilder::new_with_network::<AnyNetwork>()
+        .with_chain(chain)
+        .connect(url)
+        .await
+        .unwrap()
 }

@@ -14,9 +14,6 @@ use primitive_types::{H160, U256, U512};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
-use ethcontract::common::abi::Token;
-use ethcontract::tokens::Tokenize;
-
 use super::i256::{pow10_i128, I256};
 use crate::barter_lib::safe_math::SafeMath;
 use crate::barter_lib::u256::{parse_h256_hex, pow10_u256, u256_from_u128, ParseU256Error};
@@ -96,20 +93,51 @@ impl ChecksumAddress {
 }
 
 impl std::str::FromStr for ChecksumAddress {
-    type Err = rustc_hex::FromHexError;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        H160::from_str(s).map(Self)
+        H160::from_str(s).map(Self).map_err(|e| e.to_string())
     }
 }
 
 impl TryFrom<&str> for ChecksumAddress {
-    type Error = rustc_hex::FromHexError;
+    type Error = String;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         s.parse()
     }
 }
+
+impl From<ChecksumAddress> for alloy_primitives::Address {
+    fn from(v: ChecksumAddress) -> Self {
+        Self::from(v.0.0)
+    }
+}
+
+impl From<&ChecksumAddress> for alloy_primitives::Address {
+    fn from(v: &ChecksumAddress) -> Self {
+        Self::from(v.0.0)
+    }
+}
+
+impl From<alloy_primitives::Address> for ChecksumAddress {
+    fn from(v: alloy_primitives::Address) -> Self {
+        Self(H160(v.0.into()))
+    }
+}
+
+impl From<alloy_primitives::U256> for SafeU256 {
+    fn from(v: alloy_primitives::U256) -> Self {
+        U256::from_little_endian(&v.as_le_bytes()).into()
+    }
+}
+
+impl From<SafeU256> for alloy_primitives::U256 {
+    fn from(v: SafeU256) -> Self {
+         Self::from_limbs(v.0.0)
+    }
+}
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ChecksumError<'a> {
@@ -129,18 +157,6 @@ pub enum ChecksumError<'a> {
     derive_more::Display
 )]
 pub struct SafeU256(#[serde_as(as = "crate::barter_lib::common::NiceSerializer<primitive_types::U256>")] pub primitive_types::U256);
-
-impl Tokenize for SafeU256 {
-    fn from_token(token: Token) -> Result<Self, ethcontract::tokens::Error>
-    where
-        Self: Sized {
-        primitive_types::U256::from_token(token).map(Self)
-    }
-
-    fn into_token(self) -> Token {
-        self.0.into_token()
-    }
-}
 
 impl SafeU256 {
     pub const MAX: Self = Self(primitive_types::U256::MAX);

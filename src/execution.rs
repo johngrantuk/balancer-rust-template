@@ -1,7 +1,10 @@
-use web3::types::Bytes;
+use alloy_primitives::{Address, Bytes};
+use crate::barter_lib::SafeU256;
 
 pub mod dodo_v1 {
-    use crate::{barter_lib::{dummy::dummy_web3, SafeU256}, contracts::DodoV1PoolPrototype};
+
+    use crate::contracts::DODO_V1_POOL;
+
     use super::*;
 
     pub fn encode(
@@ -9,14 +12,12 @@ pub mod dodo_v1 {
         min_amount_out: SafeU256,
         meta: &crate::model::dodo_v1::DodoV1Meta
     ) -> EncodeResult{
-        let pool_interface = DodoV1PoolPrototype::at(&dummy_web3(), Default::default());
-
         if meta.is_sell_base {
-            let calldata = pool_interface.sell_base_token(
+            let calldata = DODO_V1_POOL.sellBaseToken(
                 amount_in.into(),
                 min_amount_out.into(),
                 Default::default()
-            ).tx.data.unwrap();
+            ).calldata().clone();
             return EncodeResult {
                 calldata,
                 target: meta.pool_address.into(),
@@ -35,7 +36,7 @@ pub mod dodo_v1 {
 #[allow(unused)]
 pub struct EncodeResult {
     pub calldata: Bytes,
-    pub target: ethcontract::Address,
+    pub target: Address,
     pub source_interaction: SourceInteraction
 }
 
