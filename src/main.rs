@@ -24,9 +24,10 @@
 
 // Compiled on rustc 1.89.0-nightly (6ccd44760 2025-06-08)
 
-use crate::{barter_lib::{amm_lib::ToExchanges, common::Swap, ChecksumAddress}, model::dodo_v1::SwapDirection};
+use crate::{barter_lib::{amm_lib::ToExchanges, common::Swap}, model::dodo_v1::SwapDirection};
 use alloy::{network::AnyNetwork, providers::{fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller}, ProviderBuilder, RootProvider}};
 use alloy_chains::NamedChain;
+use alloy_primitives::address;
 
 mod barter_lib; // utility crate, do not modify
 
@@ -54,7 +55,7 @@ async fn main() {
     let tx_block_number = 22637111;
     let input = su256const!(1000000000000000);
     let output =  su256const!(26092);
-    let pool = ChecksumAddress::from_const("0x75c23271661d9d143dcb617222bc4bec783eff34");
+    let pool = address!("0x75c23271661d9d143dcb617222bc4bec783eff34");
 
     let dodo = dodos.iter().find(|x| x.address == pool).unwrap();
     let block = tx_block_number - 1; // tx in block N generally happens on a blockchain state of block N-1

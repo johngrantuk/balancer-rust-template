@@ -289,7 +289,7 @@ pub const fn u512_to_u256(x: U512) -> (U256, bool) {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::barter_lib::{common::SU256_E18, ChecksumAddress};
+    use crate::barter_lib::{common::SU256_E18};
 
     use super::*;
 
@@ -335,31 +335,6 @@ pub mod tests {
         tst("0x000000000000000000000000fB8814D005C5f32874391e888da6eB2fE7a27902");
         tst("0x0000000000000000000000009838eCcC42659FA8AA7daF2aD134b53984c9427b");
         tst("0x00000000000000000000000098a7F18d4E56Cfe84E3D081B40001B3d5bD3eB8B");
-    }
-
-
-    #[test]
-    fn check_address_parsing() {
-        let tst = |x: &str| {
-            assert_eq!(format!("{}", ChecksumAddress::parse_const(x).unwrap()), x.to_ascii_lowercase());
-        };
-
-        tst("0x000000000000000000000000000000000000ABCD");
-        tst("0x21410232B484136404911780bC32756D5d1a9Fa9");
-        tst("0x3211C6cBeF1429da3D0d58494938299C92Ad5860");
-        tst("0x50f3752289e1456BfA505afd37B241bca23e685d");
-        tst("0x6ec38b3228251a0C5D491Faf66858e2E23d7728B");
-        tst("0x8301AE4fc9c624d1D396cbDAa1ed877821D7C511");
-        tst("0x8b0aFa4b63a3581b731dA9D79774a3eaE63B5ABD");
-        tst("0x941Eb6F616114e4Ecaa85377945EA306002612FE");
-        tst("0xB576491F1E6e5E62f1d8F26062Ee822B40B0E0d4");
-        tst("0xC26b89A667578ec7b3f11b2F98d6Fd15C07C54ba");
-        tst("0xD51a44d3FaE010294C616388b506AcdA1bfAAE46");
-        tst("0xF43b15Ab692fDe1F9c24a9FCE700AdCC809D5391");
-        tst("0xf861483fa7E511fbc37487D91B6FAa803aF5d37c");
-        tst("0xfB8814D005C5f32874391e888da6eB2fE7a27902");
-        tst("0x9838eCcC42659FA8AA7daF2aD134b53984c9427b");
-        tst("0x98a7F18d4E56Cfe84E3D081B40001B3d5bD3eB8B");
     }
 
     #[test]

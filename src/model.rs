@@ -484,6 +484,8 @@ pub mod dodo_v1 {
         mod tests {
             use std::sync::Arc;
 
+            use alloy_primitives::address;
+
             use crate::{
                 barter_lib::{common::Swap, safe_math::SafeMathError, SafeU256}, model::dodo_v1::{
                         pricing::{
@@ -494,7 +496,7 @@ pub mod dodo_v1 {
                     }, su256const, types::dodo_v1::RStatus
             };
 
-            use crate::barter_lib::amm_lib::{Address, ExchangeId, ExchangeInfo, TokenId, ZERO_ADDRESS};
+            use crate::barter_lib::amm_lib::{Address, ExchangeId, ExchangeInfo, TokenId};
 
             use crate::types::dodo_v1::PoolInfo as DodoV1PoolInfo;
 
@@ -502,9 +504,9 @@ pub mod dodo_v1 {
             fn rbelow_sell_base_token_test() {
                 let state = FlowerData {
                     pool_info: DodoV1PoolInfo {
-                        base_token: Address::try_from(ZERO_ADDRESS).unwrap(),
-                        quote_token: Address::try_from(ZERO_ADDRESS).unwrap(),
-                        address: Address::try_from(ZERO_ADDRESS).unwrap(),
+                        base_token: Address::ZERO,
+                        quote_token: Address::ZERO,
+                        address: Address::ZERO,
                     },
                     k: SafeU256::from_dec_str("800000000000000000").unwrap(),
                     base_balance: SafeU256::from_dec_str("2314909308192411380470").unwrap(),
@@ -532,9 +534,9 @@ pub mod dodo_v1 {
             fn rbelow_back_to_one_test() {
                 let state = FlowerData {
                     pool_info: DodoV1PoolInfo {
-                        base_token: Address::try_from(ZERO_ADDRESS).unwrap(),
-                        quote_token: Address::try_from(ZERO_ADDRESS).unwrap(),
-                        address: Address::try_from(ZERO_ADDRESS).unwrap(),
+                        base_token: Address::ZERO,
+                        quote_token: Address::ZERO,
+                        address: Address::ZERO,
                     },
                     k: SafeU256::from_dec_str("800000000000000000").unwrap(),
                     base_balance: SafeU256::from_dec_str("2314909308192411380470").unwrap(),
@@ -556,9 +558,9 @@ pub mod dodo_v1 {
             fn get_expected_target_test() {
                 let state = FlowerData {
                     pool_info: DodoV1PoolInfo {
-                        base_token: Address::try_from(ZERO_ADDRESS).unwrap(),
-                        quote_token: Address::try_from(ZERO_ADDRESS).unwrap(),
-                        address: Address::try_from(ZERO_ADDRESS).unwrap(),
+                        base_token: Address::ZERO,
+                        quote_token: Address::ZERO,
+                        address: Address::ZERO,
                     },
                     k: SafeU256::from_dec_str("800000000000000000").unwrap(),
                     base_balance: SafeU256::from_dec_str("2314909308192411380470").unwrap(),
@@ -581,9 +583,9 @@ pub mod dodo_v1 {
             fn get_expected_target_test2() {
                 let state = FlowerData {
                     pool_info: DodoV1PoolInfo {
-                        base_token: Address::try_from(ZERO_ADDRESS).unwrap(),
-                        quote_token: Address::try_from(ZERO_ADDRESS).unwrap(),
-                        address: Address::try_from(ZERO_ADDRESS).unwrap(),
+                        base_token: Address::ZERO,
+                        quote_token: Address::ZERO,
+                        address: Address::ZERO,
                     },
                     k: SafeU256::from_dec_str("800000000000000000").unwrap(), //
                     base_balance: SafeU256::from_dec_str("2302846430369179065157").unwrap(), //
@@ -607,9 +609,9 @@ pub mod dodo_v1 {
                 let ex = PoolRequestMeta {
                     pool_info: Arc::new(FlowerData {
                         pool_info: DodoV1PoolInfo {
-                            base_token: Address::try_from("0x4691937a7508860F876c9c0a2a617E7d9E945D4B").unwrap(),
-                            quote_token: Address::try_from("0xdAC17F958D2ee523a2206206994597C13D831ec7").unwrap(),
-                            address: Address::try_from("0x181D93EA28023bf40C8bB94796c55138719803B4").unwrap(),
+                            base_token: address!("0x4691937a7508860F876c9c0a2a617E7d9E945D4B"),
+                            quote_token: address!("0xdAC17F958D2ee523a2206206994597C13D831ec7"),
+                            address: address!("0x181D93EA28023bf40C8bB94796c55138719803B4"),
                         },
                         oracle_price: su256const!(30000),
                         k: su256const!(350000000000000000),
@@ -630,7 +632,7 @@ pub mod dodo_v1 {
                         },
                     },
                     meta: Arc::new(DodoV1Meta {
-                        pool_address: Address::try_from("0x181D93EA28023bf40C8bB94796c55138719803B4").unwrap(),
+                        pool_address: address!("0x181D93EA28023bf40C8bB94796c55138719803B4"),
                         is_sell_base: false,
                     }),
                 };
@@ -644,9 +646,9 @@ pub mod dodo_v1 {
                 let ex = PoolRequestMeta {
                     pool_info: Arc::new(FlowerData {
                         pool_info: DodoV1PoolInfo {
-                            base_token: Address::try_from("0x4691937a7508860F876c9c0a2a617E7d9E945D4B").unwrap(),
-                            quote_token: Address::try_from("0xdAC17F958D2ee523a2206206994597C13D831ec7").unwrap(),
-                            address: Address::try_from("0x181D93EA28023bf40C8bB94796c55138719803B4").unwrap(),
+                            base_token: address!("0x4691937a7508860F876c9c0a2a617E7d9E945D4B"),
+                            quote_token: address!("0xdAC17F958D2ee523a2206206994597C13D831ec7"),
+                            address: address!("0x181D93EA28023bf40C8bB94796c55138719803B4"),
                         },
                         oracle_price: su256const!(30000),
                         k: su256const!(350000000000000000),
@@ -667,7 +669,7 @@ pub mod dodo_v1 {
                         },
                     },
                     meta: Arc::new(DodoV1Meta {
-                        pool_address: Address::try_from("0x181D93EA28023bf40C8bB94796c55138719803B4").unwrap(),
+                        pool_address: address!("0x181D93EA28023bf40C8bB94796c55138719803B4"),
                         is_sell_base: false,
                     }),
                 };
@@ -773,6 +775,8 @@ pub mod dodo_v1 {
 
     #[cfg(test)]
     mod tests {
+        use alloy_primitives::address;
+
         use crate::{su256const, types::dodo_v1::{PoolInfo, RStatus}};
 
         use super::*;
@@ -781,9 +785,9 @@ pub mod dodo_v1 {
         fn test_complete() {
             let pool: FlowerData = FlowerData {
                 pool_info: PoolInfo {
-                    address: Address::from_const("0x75c23271661d9d143dcb617222bc4bec783eff34"),
-                    base_token: Address::from_const("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                    quote_token: Address::from_const("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+                    address: address!("0x75c23271661d9d143dcb617222bc4bec783eff34"),
+                    base_token: address!("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                    quote_token: address!("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
                 },
                 k: su256const!(800000000000000000),
                 base_balance: su256const!(167593430029662844614),

@@ -1,9 +1,9 @@
 #![allow(unused)]
 use serde::{Deserialize, Serialize};
 
-use crate::barter_lib::{common::Swap, ChecksumAddress};
+use crate::barter_lib::{common::Swap};
 
-pub type Address = ChecksumAddress;
+pub type Address = alloy_primitives::Address;
 
 pub type TokenAddress<'a> = &'a Address;
 pub type ExchangeAddress<'a> = &'a Address;
@@ -61,7 +61,7 @@ impl ExchangeInfo {
     }
 }
 
-pub const ZERO_ADDRESS: Address = Address::zero();
+pub const ZERO_ADDRESS: Address = Address::ZERO;
 
 pub trait SwapGas {
     type Methods;

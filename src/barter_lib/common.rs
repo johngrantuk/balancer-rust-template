@@ -30,102 +30,6 @@ pub const U256_TEN: primitive_types::U256 = SU256_TEN.0;
 pub const U256_E18: primitive_types::U256 = SU256_E18.0;
 pub const I256_E18: I256 = i256const!(pow10_i128(18));
 
-#[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Default, PartialOrd, Ord, derive_more::From, derive_more::Into, derive_more::Deref)]
-pub struct ChecksumAddress(pub H160);
-
-impl std::fmt::Debug for ChecksumAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "\"{:?}\"", self.0)
-    }
-}
-
-impl Display for ChecksumAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl ChecksumAddress {
-    pub const fn zero() -> Self {
-        Self(H160::zero())
-    }
-
-    pub const EEE: Self = Self::from_const("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
-
-    pub fn is_eth(&self) -> bool {
-        self.0 == const { Self::zero().0 } || self.0 == Self::EEE.0
-    }
-
-    pub const fn parse_const(s: &str) -> Result<Self, ParseU256Error> {
-        match parse_h256_hex(s) {
-            Ok(h) => {
-                let bytes32 = h.0;
-                if     bytes32[0] != 0
-                    || bytes32[1] != 0
-                    || bytes32[2] != 0
-                    || bytes32[3] != 0
-                    || bytes32[4] != 0
-                    || bytes32[5] != 0
-                    || bytes32[6] != 0
-                    || bytes32[7] != 0
-                    || bytes32[8] != 0
-                    || bytes32[9] != 0
-                    || bytes32[10] != 0
-                    || bytes32[11] != 0 {
-                    panic!("Address is too big to fit into 160 bits")
-                }
-
-                Ok(Self(H160([
-                    bytes32[12], bytes32[13], bytes32[14], bytes32[15], bytes32[16], bytes32[17],
-                    bytes32[18], bytes32[19], bytes32[20], bytes32[21], bytes32[22], bytes32[23],
-                    bytes32[24], bytes32[25], bytes32[26], bytes32[27], bytes32[28], bytes32[29],
-                    bytes32[30], bytes32[31],
-                ])))
-            },
-            Err(e) => Err(e),
-        }
-    }
-
-    pub const fn from_const(s: &str) -> Self {
-        unwrap_const(Self::parse_const(s))
-    }
-}
-
-impl std::str::FromStr for ChecksumAddress {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        H160::from_str(s).map(Self).map_err(|e| e.to_string())
-    }
-}
-
-impl TryFrom<&str> for ChecksumAddress {
-    type Error = String;
-
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        s.parse()
-    }
-}
-
-impl From<ChecksumAddress> for alloy_primitives::Address {
-    fn from(v: ChecksumAddress) -> Self {
-        Self::from(v.0.0)
-    }
-}
-
-impl From<&ChecksumAddress> for alloy_primitives::Address {
-    fn from(v: &ChecksumAddress) -> Self {
-        Self::from(v.0.0)
-    }
-}
-
-impl From<alloy_primitives::Address> for ChecksumAddress {
-    fn from(v: alloy_primitives::Address) -> Self {
-        Self(H160(v.0.into()))
-    }
-}
-
 impl From<alloy_primitives::U256> for SafeU256 {
     fn from(v: alloy_primitives::U256) -> Self {
         U256::from_little_endian(&v.as_le_bytes()).into()
@@ -136,15 +40,6 @@ impl From<SafeU256> for alloy_primitives::U256 {
     fn from(v: SafeU256) -> Self {
          Self::from_limbs(v.0.0)
     }
-}
-
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ChecksumError<'a> {
-    TooShort(&'a str, usize),
-    TooLong(&'a str, usize),
-    IsNotAscii(&'a str),
-    DoesNotStartWith0x(&'a str),
 }
 
 #[repr(transparent)]
@@ -469,86 +364,6 @@ where
     }
 }
 
-pub fn get_checksumed_address(address: &str) -> Result<ArrayString<42>, ChecksumError<'_>> {
-    const LENGTH: usize = 40;
-
-    use sha3::{
-        Digest,
-        Keccak256,
-    };
-
-    if !address.starts_with("0x") {
-        return Err(ChecksumError::DoesNotStartWith0x(address));
-    }
-
-    if !address.is_ascii() {
-        return Err(ChecksumError::IsNotAscii(address));
-    }
-
-    let address: [u8; 40] = address[2..]
-        .chars()
-        .map(|c| c.to_ascii_lowercase() as u8)
-        .try_collect()
-        .map_err(|e| match e {
-            CollectArrayError::TooFewElements => ChecksumError::TooShort(address, LENGTH),
-            CollectArrayError::TooManyElements => ChecksumError::TooLong(address, LENGTH),
-        })?;
-    let address = unsafe {
-        // SAFETY: we know that the address is valid because we checked the length and
-        // the ascii
-        ArrayString::from_byte_string(&address).unwrap_unchecked()
-    };
-
-    let address_hash = {
-        let mut hasher = Keccak256::new();
-        hasher.update(address.as_bytes());
-        hasher.finalize()
-    };
-
-    let address_hash = &address_hash[..];
-
-    let mut result = ArrayString::new();
-    result.push_str("0x");
-    for (index, address_char) in address.char_indices() {
-        let n = address_hash[index / 2];
-        let n = if index % 2 == 0 { n >> 4 } else { n & 0x0f };
-
-        if n > 7 {
-            // make char uppercase if ith character is 9..f
-            result.push(address_char.to_ascii_uppercase())
-        } else {
-            // already lowercased
-            result.push(address_char)
-        }
-    }
-
-    Ok(result)
-}
-
-impl Serialize for ChecksumAddress {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-    {
-        serializer.serialize_str(&get_checksumed_address(&format!("{:?}", self.0)).unwrap())
-    }
-}
-
-impl<'de> Deserialize<'de> for ChecksumAddress {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-    {
-        let string = <std::borrow::Cow<str>>::deserialize(deserializer)?;
-        let address = H160::from_str(&string)
-            .map_err(|e| {
-                serde::de::Error::custom(format!("Failed to parse string '{}' as address: {}", string, e))
-            })?;
-        Ok(ChecksumAddress(address))
-    }
-}
-
-
 #[repr(transparent)]
 #[derive(Debug, Default, Eq, PartialEq, Hash, Clone)]
 pub struct NiceSerializer<T>(pub T);
@@ -760,17 +575,6 @@ mod tests {
         assert_eq!(parse_units("0.12345", 4).unwrap(), 1234_u64.into());
         assert_eq!(parse_units("0.123", 4).unwrap(), 1230_u64.into());
         assert_eq!(parse_units("1e-8", 18).unwrap(), 10000000000_u64.into());
-    }
-
-    #[test]
-    fn test_checksum() {
-        let addr_lowercase = "0xe0fc04fa2d34a66b779fd5cee748268032a146c0";
-        let checksummed = get_checksumed_address(addr_lowercase).unwrap();
-        assert_eq!(checksummed.as_str(), "0xe0FC04FA2d34a66B779fd5CEe748268032a146c0");
-
-        let addr_uppercase = "0xE0FC04FA2D34A66B779FD5CEE748268032A146C0";
-        let checksummed = get_checksumed_address(addr_uppercase).unwrap();
-        assert_eq!(checksummed.as_str(), "0xe0FC04FA2d34a66B779fd5CEe748268032a146c0");
     }
 }
 

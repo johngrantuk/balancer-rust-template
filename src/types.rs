@@ -4,19 +4,20 @@ use serde_repr::Serialize_repr;
 use serde_repr::Deserialize_repr;
 use num_derive::FromPrimitive;
 
-use crate::barter_lib::ChecksumAddress;
 use crate::barter_lib::SafeU256;
 
 pub mod dodo_v1 {
+    use alloy_primitives::Address;
+
     use super::*;
 
     #[serde_as]
     #[derive(Debug, Deserialize, Serialize, Clone, Eq, PartialEq)]
     #[serde(rename_all = "camelCase")]
     pub struct PoolInfo {
-        pub address: ChecksumAddress,
-        pub base_token: ChecksumAddress,
-        pub quote_token: ChecksumAddress,
+        pub address: Address,
+        pub base_token: Address,
+        pub quote_token: Address,
     }
 
     #[derive(Serialize_repr, Deserialize_repr, Eq, PartialEq, Debug, Clone, FromPrimitive)]
