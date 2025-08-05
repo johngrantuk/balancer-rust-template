@@ -2,6 +2,12 @@
 
 This is a template repository designed to accelerate the integration process for new liquidity sources into the Barter protocol. It provides a comprehensive framework for discovering, modeling, and executing swaps on automated market makers (AMMs).
 
+# TLDR
+
+This repository contains an example of implementing a Dodo V1 protocol integration. It demonstrates 4 essential steps: discovering new pools, fetching data for said pools, using that data to predict AMM behavior in offline mode (so the AMM output can be predicted solely based on the fetched state), and finally the encoder that uses part of this state (colloquially named Meta in this repo) to generate the executable calldata. Most of the time it's as easy as just encoding a swap function; in some cases (famously the Uniswap V4) it might be a sequence of custom-encoded bytes.
+
+The information below provides details about how this is done, what constraints the implementation should conform to, and so on.
+
 ## Overview
 
 This template helps developers integrate new AMM protocols by providing standardized interfaces and utility functions for all aspects of the integration process.
