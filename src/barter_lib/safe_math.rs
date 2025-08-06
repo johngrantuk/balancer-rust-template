@@ -1,5 +1,7 @@
 use std::{convert, fmt::Debug, ops::{self, ControlFlow}};
 
+use alloy_primitives::{U256, U512};
+
 use crate::{barter_lib::{common::{SafeU256, SU256_ONE, SU256_ZERO}, i256::I256, u256::{u256_from_u128, u512_to_u256}}, su256const};
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
@@ -85,27 +87,27 @@ impl<T: Copy, E> From<&T> for MathResult<T, E> {
 pub type SafeMathResult<T> = MathResult<T, SafeMathError>;
 pub type SafeMathU256Result = SafeMathResult<SafeU256>;
 
-impl<T: Into<primitive_types::U256>> std::ops::AddAssign<T> for MathResult<SafeU256, SafeMathError> {
+impl<T: Into<SafeU256>> std::ops::AddAssign<T> for MathResult<SafeU256, SafeMathError> {
     fn add_assign(&mut self, rhs: T) {
-        *self = *self + rhs;
+        *self = *self + rhs.into();
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::SubAssign<T> for MathResult<SafeU256, SafeMathError> {
+impl<T: Into<SafeU256>> std::ops::SubAssign<T> for MathResult<SafeU256, SafeMathError> {
     fn sub_assign(&mut self, rhs: T) {
-        *self = *self - rhs;
+        *self = *self - rhs.into();
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::MulAssign<T> for MathResult<SafeU256, SafeMathError> {
+impl<T: Into<SafeU256>> std::ops::MulAssign<T> for MathResult<SafeU256, SafeMathError> {
     fn mul_assign(&mut self, rhs: T) {
-        *self = *self * rhs;
+        *self = *self * rhs.into();
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::DivAssign<T> for MathResult<SafeU256, SafeMathError> {
+impl<T: Into<SafeU256>> std::ops::DivAssign<T> for MathResult<SafeU256, SafeMathError> {
     fn div_assign(&mut self, rhs: T) {
-        *self = *self / rhs;
+        *self = *self / rhs.into();
     }
 }
 
@@ -322,7 +324,7 @@ macro_rules! impl_safe_math {
     }
 }
 
-impl_safe_math!(u8, u16, u32, u64, u128, primitive_types::U256, i8, i16, i32, i64, i128, I256, usize, isize, crate::barter_lib::common::SafeU256);
+impl_safe_math!(u8, u16, u32, u64, u128, alloy_primitives::U256, i8, i16, i32, i64, i128, I256, usize, isize, crate::barter_lib::common::SafeU256);
 
 pub fn div_ceil(a: impl Into<SafeMathU256Result>, b: impl Into<SafeMathU256Result>) -> SafeMathU256Result {
     let a = a.into()?;
@@ -383,7 +385,7 @@ pub fn log2(x: impl Into<SafeMathU256Result>, roundup: bool) -> SafeMathResult<S
     if value >> 1 != SU256_ZERO {
         result += const { u256_from_u128(1) };
     }
-    if roundup && (const { u256_from_u128(1) } << result?) < x {
+    if roundup && (const { u256_from_u128(1) } << result?.0) < x {
         result += const { u256_from_u128(1) };
     }
     result
@@ -394,12 +396,16 @@ pub fn pow_mod256(mut base: SafeU256, mut exponent: SafeU256) -> SafeU256 {
     let mut result = su256const!(1);
     while exponent > SU256_ZERO {
         if exponent.0.bit(0) {
-            result = u512_to_u256(result.0.full_mul(base.0)).0.into();
+            result = u512_to_u256(full_mul(result.0,base.0)).0.into();
         }
         exponent >>= 1;
-        base = u512_to_u256(base.0.full_mul(base.0)).0.into();
+        base = u512_to_u256(full_mul(base.0,base.0)).0.into();
     }
     result
+}
+
+fn full_mul(a: U256, b: U256) -> U512 {
+    U512::from(a) * U512::from(b)
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -418,10 +424,10 @@ pub trait UintIntMath: Sized {
 impl UintIntMath for SafeU256 {
     fn ui_add(self, b: I256) -> UintIntMathResult<Self> {
         if b.is_neg() {
-            self.checked_sub(unsafe { primitive_types::U256::try_from(-b).unwrap_unchecked() }.into())
+            self.checked_sub(unsafe { alloy_primitives::U256::try_from(-b).unwrap_unchecked() }.into())
                 .ok_or(UintIntMathError::Underflow)
         } else {
-            self.checked_add(unsafe { primitive_types::U256::try_from(b).unwrap_unchecked() }.into())
+            self.checked_add(unsafe { alloy_primitives::U256::try_from(b).unwrap_unchecked() }.into())
                 .ok_or(UintIntMathError::Overflow)
         }
     }
@@ -432,13 +438,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn math_works() {
+        assert_eq!(SafeU256::from(28), (SafeU256::from(10) * 5 / 2 + 3).unwrap());
+        assert_eq!(SafeMathError::Add, (SafeU256::MAX + 10).unwrap_err());
+    }
+
+    #[test]
     fn pow_mod() {
-        assert_eq!(primitive_types::U256::from(1), pow_mod256(2u32.into(), 0u32.into()).into());
-        assert_eq!(primitive_types::U256::from(2), pow_mod256(2u32.into(), 1u32.into()).into());
-        assert_eq!(primitive_types::U256::from(8), pow_mod256(2u32.into(), 3u32.into()).into());
-        assert_eq!(primitive_types::U256::from_dec_str("100000000000000000000").unwrap(), pow_mod256(100.into(), 10.into()).into());
-        assert_eq!(primitive_types::U256::from_dec_str("10000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap(), pow_mod256(100.into(), 38.into()).into());
-        assert_eq!(primitive_types::U256::from_dec_str("73663286101470436611432119930496737173840122674875487684339327936694962880512").unwrap(), pow_mod256(100.into(), 39.into()).into());
-        assert_eq!(primitive_types::U256::from_dec_str("59041770658110225754900818312084884949620587934026984283048776718299468660736").unwrap(), pow_mod256(100.into(), 100.into()).into());
+        assert_eq!(alloy_primitives::U256::from(1), pow_mod256(2u32.into(), 0u32.into()).0);
+        assert_eq!(alloy_primitives::U256::from(2), pow_mod256(2u32.into(), 1u32.into()).0);
+        assert_eq!(alloy_primitives::U256::from(8), pow_mod256(2u32.into(), 3u32.into()).0);
+        assert_eq!(alloy_primitives::U256::from_str_radix("100000000000000000000", 10).unwrap(), pow_mod256(100.into(), 10.into()).0);
+        assert_eq!(alloy_primitives::U256::from_str_radix("10000000000000000000000000000000000000000000000000000000000000000000000000000", 10).unwrap(), pow_mod256(100.into(), 38.into()).0);
+        assert_eq!(alloy_primitives::U256::from_str_radix("73663286101470436611432119930496737173840122674875487684339327936694962880512", 10).unwrap(), pow_mod256(100.into(), 39.into()).0);
+        assert_eq!(alloy_primitives::U256::from_str_radix("59041770658110225754900818312084884949620587934026984283048776718299468660736", 10).unwrap(), pow_mod256(100.into(), 100.into()).0);
     }
 }

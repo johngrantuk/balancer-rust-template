@@ -27,7 +27,7 @@ use std::{
 use crate::barter_lib::{common::{SafeU256, SU256_ONE}, u256::u256_from_u128};
 
 #[derive(Eq, PartialEq, Clone, Copy, Default)]
-pub struct I256(primitive_types::U256);
+pub struct I256(alloy_primitives::U256);
 
 impl Debug for I256 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -35,7 +35,7 @@ impl Debug for I256 {
     }
 }
 
-const NEG_BIT_PATTERN: primitive_types::U256 = primitive_types::U256([0, 0, 0, 1 << 63]);
+const NEG_BIT_PATTERN: alloy_primitives::U256 = alloy_primitives::U256::from_limbs([0, 0, 0, 1 << 63]);
 
 impl I256 {
     pub const fn is_neg(&self) -> bool {
@@ -56,10 +56,10 @@ impl I256 {
 
     pub const ZERO: I256 = Self::from_u128(0);
     pub const ONE: I256 = Self::from_u128(1);
-    pub const MAX: I256 = Self(primitive_types::U256([u64::MAX, u64::MAX, u64::MAX, u64::MAX >> 1]));
+    pub const MAX: I256 = Self(alloy_primitives::U256::from_limbs([u64::MAX, u64::MAX, u64::MAX, u64::MAX >> 1]));
     pub const MIN: I256 = Self(NEG_BIT_PATTERN);
 
-    pub const fn from_u256_pt(value: primitive_types::U256) -> Result<Self, U256ToI256ConversionError> {
+    pub const fn from_u256_pt(value: alloy_primitives::U256) -> Result<Self, U256ToI256ConversionError> {
         let result = Self(value);
         if result.is_neg() {
             Err(U256ToI256ConversionError {})
@@ -77,10 +77,10 @@ impl I256 {
     }
 
     pub const fn as_saturating_i32(&self) -> i32 {
-        self.0 .0[0] as u32 as i32
+        self.0.as_limbs()[0] as u32 as i32
     }
     pub const fn as_i32(&self) -> i32 {
-        self.0.0[0] as u32 as i32
+        self.0.as_limbs()[0] as u32 as i32
     }
 
     pub fn sqr(&self) -> Self {
@@ -180,9 +180,9 @@ macro_rules! impl_from {
                     (true, (-(x as i128)) as u128) // TODO: handle i128::MIN (will panic
                                                    // in current impl)
                 };
-                let mut val = primitive_types::U256::from(x);
+                let mut val = alloy_primitives::U256::from(x);
                 if neg {
-                    val = !val + $crate::barter_lib::common::SU256_ONE;
+                    val = !val + $crate::barter_lib::common::U256_ONE;
                 }
                 Self(val)
             }
@@ -204,7 +204,7 @@ pub const fn pow10_i128(val: u32) -> i128 {
 pub const fn i256_from_i128(val: i128) -> I256 {
     let [lo, hi]: [u64; 2] = unsafe { std::mem::transmute(val.to_le()) };
     let sign_bit = if val.is_negative() { u64::MAX } else { 0 };
-    I256(primitive_types::U256([lo, hi, sign_bit, sign_bit]))
+    I256(alloy_primitives::U256::from_limbs([lo, hi, sign_bit, sign_bit]))
 }
 
 #[macro_export]
@@ -228,7 +228,7 @@ impl_from!(u128);
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct I256ToU256ConversionError;
 
-impl TryFrom<I256> for primitive_types::U256 {
+impl TryFrom<I256> for alloy_primitives::U256 {
     type Error = I256ToU256ConversionError;
 
     fn try_from(value: I256) -> Result<Self, Self::Error> {
@@ -244,17 +244,17 @@ impl TryFrom<I256> for SafeU256 {
     type Error = I256ToU256ConversionError;
 
     fn try_from(value: I256) -> Result<Self, Self::Error> {
-        primitive_types::U256::try_from(value).map(SafeU256)
+        alloy_primitives::U256::try_from(value).map(SafeU256)
     }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct U256ToI256ConversionError;
 
-impl TryFrom<primitive_types::U256> for I256 {
+impl TryFrom<alloy_primitives::U256> for I256 {
     type Error = U256ToI256ConversionError;
 
-    fn try_from(value: primitive_types::U256) -> Result<Self, Self::Error> {
+    fn try_from(value: alloy_primitives::U256) -> Result<Self, Self::Error> {
         Self::from_u256(value.into())
     }
 }

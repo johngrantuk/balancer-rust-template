@@ -14,7 +14,6 @@ envy = "0.4.2"
 num = "0.4.0"
 num-derive = "0.4.0"
 num-traits = "0.2.16"
-primitive-types = {version = "0.12.2", features = ["serde", "fp-conversion"]}
 reqwest = {version = "0.12.5", features = ["json"]}
 serde = { version = "1.0.217", features = ["derive", "rc"] }
 serde_json = "1.0.138"

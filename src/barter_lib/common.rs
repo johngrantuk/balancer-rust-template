@@ -3,42 +3,39 @@ use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::num::ParseIntError;
-use std::str::FromStr;
-use arrayvec::ArrayString;
+pub use alloy_primitives::{address, Address};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::Visitor;
 use serde_with::de::DeserializeAsWrap;
 use serde_with::ser::SerializeAsWrap;
 use serde_with::{serde_as, DeserializeAs, SerializeAs};
-use primitive_types::{H160, U256, U512};
+use alloy_primitives::{U256, U512};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
-use super::i256::{pow10_i128, I256};
+use crate::barter_lib::i256::{pow10_i128, I256};
 use crate::barter_lib::safe_math::SafeMath;
-use crate::barter_lib::u256::{parse_h256_hex, pow10_u256, u256_from_u128, ParseU256Error};
-use crate::barter_lib::{safe_math, unwrap_const};
-use crate::i256const;
+use crate::barter_lib::u256::{pow10_u256, u256_from_u128, u256_to_f64_lossy};
+use crate::{i256const, su256const};
+use crate::barter_lib::{safe_math};
 
 pub const SU256_ZERO: SafeU256 = u256_from_u128(0);
 pub const SU256_ONE: SafeU256 = u256_from_u128(1);
 pub const SU256_TEN: SafeU256 = u256_from_u128(10);
 pub const SU256_E18: SafeU256 = pow10_u256(18);
-pub const U256_ZERO: primitive_types::U256 = SU256_ZERO.0;
-pub const U256_ONE: primitive_types::U256 = SU256_ONE.0;
-pub const U256_TEN: primitive_types::U256 = SU256_TEN.0;
-pub const U256_E18: primitive_types::U256 = SU256_E18.0;
+pub const U256_ZERO: U256 = SU256_ZERO.0;
+pub const U256_ONE: U256 = SU256_ONE.0;
+pub const U256_TEN: U256 = SU256_TEN.0;
+pub const U256_E18: U256 = SU256_E18.0;
 pub const I256_E18: I256 = i256const!(pow10_i128(18));
 
-impl From<alloy_primitives::U256> for SafeU256 {
-    fn from(v: alloy_primitives::U256) -> Self {
-        U256::from_little_endian(&v.as_le_bytes()).into()
-    }
-}
+pub const EEE: Address = address!("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
 
-impl From<SafeU256> for alloy_primitives::U256 {
-    fn from(v: SafeU256) -> Self {
-         Self::from_limbs(v.0.0)
+pub const fn is_eth(addr: Address) -> bool {
+    match addr {
+        Address::ZERO => true,
+        EEE => true,
+        _ => false,
     }
 }
 
@@ -46,15 +43,56 @@ impl From<SafeU256> for alloy_primitives::U256 {
 #[serde_as]
 #[derive(
     Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Default, PartialOrd, Ord,
-    derive_more::From, derive_more::Into, derive_more::Shl, derive_more::Shr, derive_more::ShlAssign, derive_more::ShrAssign,
-    derive_more::Rem, derive_more::RemAssign,
+    derive_more::From, derive_more::Into,
     derive_more::BitAnd, derive_more::BitAndAssign, derive_more::BitOr, derive_more::BitOrAssign, derive_more::BitXor, derive_more::BitXorAssign, derive_more::Not,
-    derive_more::Display
+    derive_more::Display,
 )]
-pub struct SafeU256(#[serde_as(as = "crate::barter_lib::common::NiceSerializer<primitive_types::U256>")] pub primitive_types::U256);
+pub struct SafeU256(#[serde_as(as = "crate::barter_lib::common::NiceSerializer<alloy_primitives::U256>")] pub alloy_primitives::U256);
+
+impl<T: Into<SafeU256>> std::ops::Rem<T> for SafeU256 {
+    type Output = Self;
+
+    fn rem(self, rhs: T) -> Self::Output {
+        Self(self.0 % rhs.into().0)
+    }
+}
+
+impl<T: Into<SafeU256>> std::ops::RemAssign<T> for SafeU256 {
+    fn rem_assign(&mut self, rhs: T) {
+        self.0 %= rhs.into().0;
+    }
+}
+
+impl<T: Into<SafeU256>> std::ops::Shl<T> for SafeU256 {
+    type Output = Self;
+
+    fn shl(self, rhs: T) -> Self::Output {
+        Self(self.0 << rhs.into().0)
+    }
+}
+
+impl<T: Into<SafeU256>> std::ops::ShlAssign<T> for SafeU256 {
+    fn shl_assign(&mut self, rhs: T) {
+        self.0 <<= rhs.into().0;
+    }
+}
+
+impl<T: Into<SafeU256>> std::ops::Shr<T> for SafeU256 {
+    type Output = Self;
+
+    fn shr(self, rhs: T) -> Self::Output {
+        Self(self.0 >> rhs.into().0)
+    }
+}
+
+impl<T: Into<SafeU256>> std::ops::ShrAssign<T> for SafeU256 {
+    fn shr_assign(&mut self, rhs: T) {
+        self.0 >>= rhs.into().0;
+    }
+}
 
 impl SafeU256 {
-    pub const MAX: Self = Self(primitive_types::U256::MAX);
+    pub const MAX: Self = Self(alloy_primitives::U256::MAX);
 
     pub fn checked_add(self, other: Self) -> Option<Self> {
         self.0.checked_add(other.0).map(Self)
@@ -87,41 +125,45 @@ impl SafeU256 {
         (Self(result), overflow)
     }
 
-    // TODO: Make pow now panic on overflow
-    pub fn pow(self, exp: impl Into<primitive_types::U256>) -> Self {
-        Self(self.0.pow(exp.into()))
+    // TODO: Make pow not panic on overflow
+    pub fn pow(self, exp: impl Into<Self>) -> Self {
+        Self(self.0.checked_pow(exp.into().0).unwrap())
     }
 
     pub const fn zero() -> Self {
-        Self(primitive_types::U256::zero())
+        Self(alloy_primitives::U256::ZERO)
     }
 
     pub const fn is_zero(&self) -> bool {
-        self.0.is_zero()
+        match self.0 {
+            alloy_primitives::U256::ZERO => true,
+            _ => false,
+        }
     }
 
-    pub fn exp10(n: usize) -> Self {
-        primitive_types::U256::exp10(n).into()
+    pub fn exp10(n: impl Into<Self>) -> Self {
+        su256const!(10).pow(n)
     }
 
+    // TODO: remove this function
     pub fn from_dec_str(s: &str) -> Result<Self, uint::FromDecStrErr> {
-        primitive_types::U256::from_dec_str(s).map(Self)
+        Ok(Self(s.parse().unwrap()))
     }
 
     pub const fn one() -> Self {
-        Self(primitive_types::U256::one())
+        Self(alloy_primitives::U256::ONE)
     }
 
     pub fn as_u32(&self) -> u32 {
-        self.0.as_u32()
+        self.0.to()
     }
 
     pub fn as_u64(&self) -> u64 {
-        self.0.as_u64()
+        self.0.to()
     }
 
     pub fn as_u128(&self) -> u128 {
-        self.0.as_u128()
+        self.0.to()
     }
 
     pub const fn bit(&self, index: usize) -> bool {
@@ -129,19 +171,24 @@ impl SafeU256 {
     }
 
     pub const fn low_u128(&self) -> u128 {
-        self.0.low_u128()
+        let [lo, hi, _, _] = self.0.into_limbs();
+        (lo as u128) | ((hi as u128) << 64)
     }
 
     pub fn as_usize(&self) -> usize {
-        self.0.as_usize()
+        self.as_u64().try_into().unwrap()
     }
 
     pub fn from_big_endian(bytes: &[u8]) -> Self {
-        primitive_types::U256::from_big_endian(bytes).into()
+        Self(U256::from_be_slice(bytes))
+    }
+
+    pub fn to_f64_lossy(&self) -> f64 {
+        u256_to_f64_lossy(self.0)
     }
 }
 
-impl From<&SafeU256> for primitive_types::U256 {
+impl From<&SafeU256> for alloy_primitives::U256 {
     fn from(v: &SafeU256) -> Self {
         v.0
     }
@@ -149,37 +196,30 @@ impl From<&SafeU256> for primitive_types::U256 {
 
 impl From<SafeU256> for U512 {
     fn from(v: SafeU256) -> Self {
-        v.0.into()
+        v.0.to()
     }
 }
 
 impl TryFrom<U512> for SafeU256 {
-    type Error = <primitive_types::U256 as TryFrom<U512>>::Error;
+    type Error = alloy_primitives::ruint::FromUintError<U256>;
 
     fn try_from(value: U512) -> Result<Self, Self::Error> {
-        Ok(Self(primitive_types::U256::try_from(value)?))
+        use alloy_primitives::ruint::UintTryTo;
+        Ok(Self(value.uint_try_to()?))
     }
 }
 
 macro_rules! declare_conv {
-    // () => {
-    //     impl From<u64> for SafeU256 {
-    //         fn from(v: u64) -> Self {
-    //             Self(primitive_types::U256::from(v))
-    //         }
-    //     }
-    // };
-
     ($($t:ty),*) => {
         $(
             impl From<$t> for SafeU256 {
                 fn from(v: $t) -> Self {
-                    Self(primitive_types::U256::from(v))
+                    Self(alloy_primitives::U256::from(v))
                 }
             }
 
             impl TryInto<$t> for SafeU256 {
-                type Error = <primitive_types::U256 as TryInto<$t>>::Error;
+                type Error = <alloy_primitives::U256 as TryInto<$t>>::Error;
 
                 fn try_into(self) -> Result<$t, Self::Error> {
                     self.0.try_into()
@@ -191,41 +231,45 @@ macro_rules! declare_conv {
 
 declare_conv!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, usize, isize);
 
-// impl SafeMath for $name {
-impl<T: Into<primitive_types::U256>> std::ops::Add<T> for SafeU256 {
+impl<T: Into<SafeU256>> std::ops::Add<T> for SafeU256 {
     type Output = safe_math::SafeMathResult<Self>;
 
     fn add(self, rhs: T) -> Self::Output {
-        safe_math::MathResult(Ok(Self(self.0.sm_add(rhs.into())?)))
+        safe_math::MathResult(Ok(self.sm_add(rhs.into())?))
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::Sub<T> for SafeU256 {
+impl<T: Into<SafeU256>> std::ops::Sub<T> for SafeU256 {
     type Output = safe_math::SafeMathResult<Self>;
 
     fn sub(self, rhs: T) -> Self::Output {
-        safe_math::MathResult(Ok(Self(self.0.sm_sub(rhs.into())?)))
+        safe_math::MathResult(Ok(self.sm_sub(rhs.into())?))
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::Mul<T> for SafeU256 {
+impl<T: Into<SafeU256>> std::ops::Mul<T> for SafeU256 {
     type Output = safe_math::SafeMathResult<Self>;
 
     fn mul(self, rhs: T) -> Self::Output {
-        safe_math::MathResult(Ok(Self(self.0.sm_mul(rhs.into())?)))
+        safe_math::MathResult(Ok(self.sm_mul(rhs.into())?))
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::Div<T> for SafeU256 {
+impl<T: Into<SafeU256>> std::ops::Div<T> for SafeU256 {
     type Output = safe_math::SafeMathResult<Self>;
 
     fn div(self, rhs: T) -> Self::Output {
-        safe_math::MathResult(Ok(Self(self.0.sm_div(rhs.into())?)))
+        safe_math::MathResult(Ok(self.sm_div(rhs.into())?))
     }
 }
 
-// impl SafeMath<SafeMathResult<$name>> for $name {
-impl<T: Into<primitive_types::U256>> std::ops::Add<safe_math::SafeMathResult<T>> for SafeU256 {
+impl From<&SafeU256> for SafeU256 {
+    fn from(v: &SafeU256) -> Self {
+        *v
+    }
+}
+
+impl<T: Into<SafeU256>> std::ops::Add<safe_math::SafeMathResult<T>> for SafeU256 {
     type Output = safe_math::SafeMathResult<Self>;
 
     fn add(self, rhs: safe_math::SafeMathResult<T>) -> Self::Output {
@@ -233,7 +277,7 @@ impl<T: Into<primitive_types::U256>> std::ops::Add<safe_math::SafeMathResult<T>>
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::Sub<safe_math::SafeMathResult<T>> for SafeU256 {
+impl<T: Into<SafeU256>> std::ops::Sub<safe_math::SafeMathResult<T>> for SafeU256 {
     type Output = safe_math::SafeMathResult<Self>;
 
     fn sub(self, rhs: safe_math::SafeMathResult<T>) -> Self::Output {
@@ -241,7 +285,7 @@ impl<T: Into<primitive_types::U256>> std::ops::Sub<safe_math::SafeMathResult<T>>
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::Mul<safe_math::SafeMathResult<T>> for SafeU256 {
+impl<T: Into<SafeU256>> std::ops::Mul<safe_math::SafeMathResult<T>> for SafeU256 {
     type Output = safe_math::SafeMathResult<Self>;
 
     fn mul(self, rhs: safe_math::SafeMathResult<T>) -> Self::Output {
@@ -249,7 +293,7 @@ impl<T: Into<primitive_types::U256>> std::ops::Mul<safe_math::SafeMathResult<T>>
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::Div<safe_math::SafeMathResult<T>> for SafeU256 {
+impl<T: Into<SafeU256>> std::ops::Div<safe_math::SafeMathResult<T>> for SafeU256 {
     type Output = safe_math::SafeMathResult<Self>;
 
     fn div(self, rhs: safe_math::SafeMathResult<T>) -> Self::Output {
@@ -259,7 +303,7 @@ impl<T: Into<primitive_types::U256>> std::ops::Div<safe_math::SafeMathResult<T>>
 
 // impl SafeMath<$name> for SafeMathResult<$name> {
 
-impl<T: Into<primitive_types::U256>> std::ops::Add<T> for safe_math::SafeMathResult<SafeU256> {
+impl<T: Into<SafeU256>> std::ops::Add<T> for safe_math::SafeMathResult<SafeU256> {
     type Output = safe_math::SafeMathResult<SafeU256>;
 
     fn add(self, rhs: T) -> Self::Output {
@@ -267,7 +311,7 @@ impl<T: Into<primitive_types::U256>> std::ops::Add<T> for safe_math::SafeMathRes
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::Sub<T> for safe_math::SafeMathResult<SafeU256> {
+impl<T: Into<SafeU256>> std::ops::Sub<T> for safe_math::SafeMathResult<SafeU256> {
     type Output = safe_math::SafeMathResult<SafeU256>;
 
     fn sub(self, rhs: T) -> Self::Output {
@@ -275,7 +319,7 @@ impl<T: Into<primitive_types::U256>> std::ops::Sub<T> for safe_math::SafeMathRes
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::Mul<T> for safe_math::SafeMathResult<SafeU256> {
+impl<T: Into<SafeU256>> std::ops::Mul<T> for safe_math::SafeMathResult<SafeU256> {
     type Output = safe_math::SafeMathResult<SafeU256>;
 
     fn mul(self, rhs: T) -> Self::Output {
@@ -283,7 +327,7 @@ impl<T: Into<primitive_types::U256>> std::ops::Mul<T> for safe_math::SafeMathRes
     }
 }
 
-impl<T: Into<primitive_types::U256>> std::ops::Div<T> for safe_math::SafeMathResult<SafeU256> {
+impl<T: Into<SafeU256>> std::ops::Div<T> for safe_math::SafeMathResult<SafeU256> {
     type Output = safe_math::SafeMathResult<SafeU256>;
 
     fn div(self, rhs: T) -> Self::Output {
@@ -332,12 +376,12 @@ impl std::fmt::Debug for SafeU256 {
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-enum CollectArrayError {
+pub enum CollectArrayError {
     TooFewElements,
     TooManyElements,
 }
 
-trait CollectArray<T, const N: usize> {
+pub trait CollectArray<T, const N: usize> {
     fn try_collect(self) -> Result<[T; N], CollectArrayError>;
 }
 
@@ -379,7 +423,16 @@ macro_rules! generate_from_str_impl {
             type FromStrRadixErr = $errty;
 
             fn from_str_radix(str: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
-                <$selfty>::from_str_radix(str, radix)
+                <$selfty>::from_str_radix(str, radix as _)
+            }
+        }
+
+        #[cfg(test)]
+        paste::paste! {
+            #[test]
+            fn [<to_string_generates_decimal_ $selfty:lower>]() {
+                let value = $selfty::from(12 as u8);
+                assert_eq!(value.to_string(), "12");
             }
         }
     };
@@ -458,7 +511,7 @@ where
 }
 
 
-generate_from_str_impl!(U256, uint::FromStrRadixErr);
+generate_from_str_impl!(U256, alloy_primitives::ruint::ParseError);
 generate_from_str_impl!(i128, ParseIntError);
 generate_from_str_impl!(u128, ParseIntError);
 generate_from_str_impl!(i64, ParseIntError);
@@ -470,10 +523,19 @@ generate_from_str_impl!(i32, ParseIntError);
 generate_from_str_impl!(i16, ParseIntError);
 generate_from_str_impl!(u32, ParseIntError);
 
+#[derive(Debug, Deserialize, Serialize, Default, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct Batched<T, U> {
+    pub items: Vec<T>,
+    pub meta: U,
+}
+
+
 #[derive(Debug)]
 pub enum ParseUnitsError {
     ParseFloat(core::num::ParseFloatError, u8, String),
-    FromDecStr(uint::FromDecStrErr, u8, String),
+    FromDecStr(alloy_primitives::ruint::ParseError, u8, String),
+    PrecisionLoss(String)
 }
 
 pub fn parse_units(value: &str, decimals: u8) -> Result<SafeU256, ParseUnitsError> {
@@ -487,16 +549,21 @@ pub fn parse_units(value: &str, decimals: u8) -> Result<SafeU256, ParseUnitsErro
     } else {
         let dot_index = value.find('.');
         let Some(dot_index) = dot_index else {
-            return Ok(U256::from_dec_str(value).map_err(|e| ParseUnitsError::FromDecStr(e, decimals, value.to_string()))?.mul(U256::exp10(decimals.into())).into());
+            return Ok(value.parse::<U256>().map_err(|e| ParseUnitsError::FromDecStr(e, decimals, value.to_string()))?.mul(SafeU256::exp10(decimals).0).into());
         };
         let (integer, fractional) = value.split_at(dot_index);
-        let integer = U256::from_dec_str(integer).map_err(|e| ParseUnitsError::FromDecStr(e, decimals, value.to_string()))?.mul(U256::exp10(decimals.into()));
+        let integer = integer.parse::<U256>().map_err(|e| ParseUnitsError::FromDecStr(e, decimals, value.to_string()))?.mul(SafeU256::exp10(decimals).0);
         let fractional = &fractional[1..];
-        let mut fract = U256::from_dec_str(fractional).map_err(|e| ParseUnitsError::FromDecStr(e, decimals, value.to_string()))?;
+        let mut fract = fractional.parse::<U256>().map_err(|e| ParseUnitsError::FromDecStr(e, decimals, value.to_string()))?;
         if fractional.len() < decimals as usize {
-            fract *= U256::exp10((decimals - fractional.len() as u8).into());
+            fract *= SafeU256::exp10(decimals - fractional.len() as u8).0;
         } else {
-            fract /= U256::exp10(fractional.len() - decimals as usize);
+            let diff = fractional.len() - decimals as usize;
+            // 10**75 is the max, so leave 25 for the integer part, that gives us 50 digits of precision
+            if diff > 50 {
+                return Err(ParseUnitsError::PrecisionLoss(value.to_string()));
+            }
+            fract /= SafeU256::exp10(diff).0;
         }
 
         Ok((integer + fract).into())
@@ -575,6 +642,12 @@ mod tests {
         assert_eq!(parse_units("0.12345", 4).unwrap(), 1234_u64.into());
         assert_eq!(parse_units("0.123", 4).unwrap(), 1230_u64.into());
         assert_eq!(parse_units("1e-8", 18).unwrap(), 10000000000_u64.into());
+    }
+
+    #[test]
+    fn test_checksum() {
+        assert_eq!(address!("0xe0fc04fa2d34a66b779fd5cee748268032a146c0").to_checksum(None), "0xe0FC04FA2d34a66B779fd5CEe748268032a146c0");
+        assert_eq!(address!("0x98a7F18d4E56Cfe84E3D081B40001B3d5bD3eB8B").to_checksum(None), "0x98a7F18d4E56Cfe84E3D081B40001B3d5bD3eB8B");
     }
 }
 
@@ -688,6 +761,19 @@ impl JsonLegit for reqwest::Response {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ExecutorType {
+    SwapExecutor,
+    Cow,
+}
+
+impl From<ExecutorType> for u8 {
+    fn from(e: ExecutorType) -> u8 {
+        e as u8
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct SerdeError<E> {
     pub path: String,
@@ -730,12 +816,6 @@ fn format_path(path: serde_path_to_error::Path) -> String {
     }
     result
 }
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Erc4626Token {
-    pub rate: SafeU256,
-}
-
 
 #[derive(Debug, Deserialize, Serialize, Default, Clone, Eq)]
 #[serde(deny_unknown_fields)]

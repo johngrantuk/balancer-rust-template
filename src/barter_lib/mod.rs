@@ -3,7 +3,6 @@
 use std::{collections::HashMap, sync::Arc};
 
 pub use common::SafeU256;
-pub use primitive_types;
 use serde_with::serde_as;
 use serde::{Serialize, Deserialize};
 use smol_str::SmolStr;
@@ -15,13 +14,11 @@ pub mod u256;
 pub mod safe_math;
 pub mod amm_lib;
 
-pub type U256 = primitive_types::U256;
-pub type U512 = primitive_types::U512;
-pub type H256 = primitive_types::H256;
-pub type Bytes32 = primitive_types::H256;
+pub type U256 = alloy_primitives::U256;
+pub type U512 = alloy_primitives::U512;
+pub type B256 = alloy_primitives::B256;
+pub type Bytes32 = alloy_primitives::B256;
 pub use u256::parse_u256;
-
-pub type UnderlyingError = primitive_types::Error;
 
 pub const fn unwrap_const<T, E>(result: Result<T, E>) -> T {
     match result {
