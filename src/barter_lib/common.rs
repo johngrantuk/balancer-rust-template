@@ -146,7 +146,7 @@ impl SafeU256 {
     }
 
     // TODO: remove this function
-    pub fn from_dec_str(s: &str) -> Result<Self, uint::FromDecStrErr> {
+    pub fn from_dec_str(s: &str) -> Result<Self, ()> {
         Ok(Self(s.parse().unwrap()))
     }
 

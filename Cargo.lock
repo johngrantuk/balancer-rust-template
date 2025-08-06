@@ -865,7 +865,6 @@ dependencies = [
  "smol_str",
  "thiserror",
  "tokio",
- "uint",
 ]
 
 [[package]]
