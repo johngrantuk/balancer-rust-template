@@ -4,7 +4,7 @@ This is a template repository designed to accelerate the integration process for
 
 # TLDR
 
-This repository contains an example of implementing a Dodo V1 protocol integration. It demonstrates 4 essential steps: discovering new pools, fetching data for said pools, using that data to predict AMM behavior in offline mode (so the AMM output can be predicted solely based on the fetched state), and finally the encoder that uses part of this state (colloquially named Meta in this repo) to generate the executable calldata. Most of the time it's as easy as just encoding a swap function; in some cases (famously the Uniswap V4) it might be a sequence of custom-encoded bytes.
+This repository contains an example of implementing a Dodo V1 protocol integration. It demonstrates 4 essential steps: discovering new pools, fetching data for said pools, using that data to predict AMM behavior in offline mode (so the AMM output can be predicted solely based on the fetched state), and finally the encoder that uses part of this state (colloquially named Meta in this repo) to generate the executable calldata. Most of the time it's as easy as just encoding a swap function; in some cases (famously the Uniswap V4) it might be a sequence of custom in-house encoding.
 
 The information below provides details about how this is done, what constraints the implementation should conform to, and so on.
 
@@ -36,7 +36,7 @@ The foundation of the template, containing essential utility types and traits:
 
 ### Reference Implementation
 
-The repository includes a complete reference implementation for the **DODO V1** protocol, demonstrating all integration steps. You can examine the `main()` function to see the complete workflow in action. The current implementation uses the `web3-rs` library for blockchain interactions (migration to `alloy` is planned for future versions).
+The repository includes a complete reference implementation for the **DODO V1** protocol, demonstrating all integration steps. You can examine the `main()` function to see the complete workflow in action. The current implementation uses the `alloy` stack
 
 ## Critical Requirements & Constraints
 
@@ -89,10 +89,10 @@ This step ensures your implementation correctly predicts swap outcomes:
 
 ```rust
 // 1. Discover all pools
-let pools = discovery::dodo_v1::get_all_pools(&web3).await;
+let dodos = discovery::dodo_v1::get_all_pools(&provider).await;
 
 // 2. Select a pool and fetch its current state
-let pool_data = polling::dodo_v1::get_flower_data(&web3, pool_info, block_id).await;
+let flower_data = polling::dodo_v1::get_flower_data(&provider, dodo.clone(), block).await;
 
 // 3. Convert to exchanges
 let exchanges = pool_data.to_exchanges(&mut exchange_context);
