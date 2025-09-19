@@ -1,0 +1,92 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot_",
+        "type": "bytes32"
+      }
+    ],
+    "name": "readFromStorage",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "result_",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token0",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "token1",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "salt",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct DexKey",
+        "name": "dexKey_",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bool",
+        "name": "swap0To1_",
+        "type": "bool"
+      },
+      {
+        "internalType": "int256",
+        "name": "amountSpecified_",
+        "type": "int256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountLimit_",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "to_",
+        "type": "address"
+      },
+      {
+        "internalType": "bool",
+        "name": "isCallback_",
+        "type": "bool"
+      },
+      {
+        "internalType": "bytes",
+        "name": "callbackData_",
+        "type": "bytes"
+      },
+      {
+        "internalType": "bytes",
+        "name": "extraData_",
+        "type": "bytes"
+      }
+    ],
+    "name": "swapSingle",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "amountUnspecified_",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  }
+]

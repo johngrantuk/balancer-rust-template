@@ -32,6 +32,56 @@ pub mod dodo_v1 {
     }
 }
 
+pub mod fluid_dex_lite {
+    use crate::contracts::{FLUID_DEX_LITE, FluidDexLiteContract};
+    use crate::model::fluid_dex_lite::FluidDexLiteMeta;
+
+    use super::*;
+
+    pub fn encode(
+        amount_in: SafeU256,
+        min_amount_out: SafeU256,
+        meta: &FluidDexLiteMeta
+    ) -> EncodeResult {
+        // Prepare DexKey struct for the swapSingle call
+        let dex_key = FluidDexLiteContract::DexKey {
+            token0: meta.dex_key.token0,
+            token1: meta.dex_key.token1,
+            salt: meta.dex_key.salt.0.into(), // Convert SafeU256 to U256
+        };
+
+        // Determine swap amount and limits based on the swap direction
+        let amount_specified = if meta.swap0_to1 {
+            // Exact input swap: positive amount means selling the input token
+            alloy_primitives::I256::from_raw(amount_in.0)
+        } else {
+            // Exact input swap: positive amount means selling the input token  
+            alloy_primitives::I256::from_raw(amount_in.0)
+        };
+
+        // For exact input swaps, amountLimit is the minimum output amount
+        let amount_limit = min_amount_out.0;
+
+        // Encode swapSingle function call
+        let calldata = FLUID_DEX_LITE.swapSingle(
+            dex_key,
+            meta.swap0_to1,
+            amount_specified,
+            amount_limit,
+            Address::ZERO, // to_ parameter - will be set by the executor
+            false, // isCallback_ (set to false for simple swaps)
+            alloy_primitives::Bytes::new(), // callbackData_ (empty)
+            alloy_primitives::Bytes::new(), // extraData_ (empty)
+        ).calldata().clone();
+
+        EncodeResult {
+            calldata,
+            target: meta.dex_lite_address,
+            source_interaction: SourceInteraction::Approve, // Need to approve tokens to FluidDexLite contract
+        }
+    }
+}
+
 #[derive(Debug)]
 #[allow(unused)]
 pub struct EncodeResult {

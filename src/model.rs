@@ -809,3 +809,616 @@ pub mod dodo_v1 {
         }
     }
 }
+
+pub mod fluid_dex_lite {
+    use std::sync::Arc;
+    use crate::barter_lib::amm_lib::*;
+    use crate::barter_lib::common::Swap;
+    use crate::barter_lib::{
+        amm_lib::ExchangeInfo, 
+        safe_math::{MathResult, SafeMathError}, 
+        SafeU256
+    };
+    use crate::types::fluid_dex_lite::{
+        FlowerData, 
+        UnpackedDexVariables, 
+        PricingResult, 
+
+        BITS_DEX_LITE_DEX_VARIABLES_FEE,
+        BITS_DEX_LITE_DEX_VARIABLES_REVENUE_CUT,
+        BITS_DEX_LITE_DEX_VARIABLES_REBALANCING_STATUS,
+        BITS_DEX_LITE_DEX_VARIABLES_CENTER_PRICE_SHIFT_ACTIVE,
+        BITS_DEX_LITE_DEX_VARIABLES_CENTER_PRICE,
+        BITS_DEX_LITE_DEX_VARIABLES_CENTER_PRICE_CONTRACT_ADDRESS,
+        BITS_DEX_LITE_DEX_VARIABLES_RANGE_PERCENT_SHIFT_ACTIVE,
+        BITS_DEX_LITE_DEX_VARIABLES_UPPER_PERCENT,
+        BITS_DEX_LITE_DEX_VARIABLES_LOWER_PERCENT,
+        BITS_DEX_LITE_DEX_VARIABLES_THRESHOLD_PERCENT_SHIFT_ACTIVE,
+        BITS_DEX_LITE_DEX_VARIABLES_UPPER_SHIFT_THRESHOLD_PERCENT,
+        BITS_DEX_LITE_DEX_VARIABLES_LOWER_SHIFT_THRESHOLD_PERCENT,
+        BITS_DEX_LITE_DEX_VARIABLES_TOKEN_0_DECIMALS,
+        BITS_DEX_LITE_DEX_VARIABLES_TOKEN_1_DECIMALS,
+        BITS_DEX_LITE_DEX_VARIABLES_TOKEN_0_TOTAL_SUPPLY_ADJUSTED,
+        BITS_DEX_LITE_DEX_VARIABLES_TOKEN_1_TOTAL_SUPPLY_ADJUSTED,
+        BITS_DEX_LITE_CENTER_PRICE_SHIFT_SHIFTING_TIME,
+        BITS_DEX_LITE_CENTER_PRICE_SHIFT_MAX_CENTER_PRICE,
+        BITS_DEX_LITE_CENTER_PRICE_SHIFT_MIN_CENTER_PRICE,
+        BITS_DEX_LITE_RANGE_SHIFT_OLD_UPPER_RANGE_PERCENT,
+        BITS_DEX_LITE_RANGE_SHIFT_OLD_LOWER_RANGE_PERCENT,
+        BITS_DEX_LITE_RANGE_SHIFT_TIME_TO_SHIFT,
+        BITS_DEX_LITE_RANGE_SHIFT_TIMESTAMP,
+
+        X1, X2, X5, X7, X13, X14, X19, X20, X24, X28, X33, X40, X60,
+        FOUR_DECIMALS, SIX_DECIMALS, PRICE_PRECISION, TOKENS_DECIMALS_PRECISION,
+        DEFAULT_EXPONENT_SIZE, DEFAULT_EXPONENT_MASK, MINIMUM_LIQUIDITY_SWAP,
+    };
+
+    pub use crate::types::fluid_dex_lite::FluidDexLiteError;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[repr(u8)]
+    pub enum FluidDexLiteMethods {
+        #[allow(dead_code)] // Used in gas calculations (line 149), but compiler doesn't detect it
+        SwapSingle = 0,
+    }
+
+    #[derive(Debug, PartialEq, Clone)]
+    pub enum SwapDirection {
+        Token0ToToken1,
+        Token1ToToken0,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct FluidDexLiteExchangeRequest {
+        pub direction: SwapDirection,
+        #[allow(dead_code)] // Used in gas calculations (line 150), but compiler doesn't detect it
+        pub exchange_info: ExchangeInfo,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize, Hash, Eq, PartialEq, Clone)]
+    #[serde(rename_all = "camelCase")]
+    #[serde(deny_unknown_fields)]
+    pub struct FluidDexLiteMeta {
+        pub dex_lite_address: Address,
+        pub dex_key: crate::types::fluid_dex_lite::DexKey,
+        pub swap0_to1: bool,
+    }
+
+    impl GetAddress for FluidDexLiteMeta {
+        fn get_address(&self) -> Address {
+            self.dex_lite_address
+        }
+    }
+
+    impl ToExchanges for FlowerData {
+        type Ex = FluidDexLiteExchange;
+        type ExIter<'a, T: ExchangeContext + 'a> = impl Iterator<Item = Self::Ex> + 'a;
+
+        fn to_exchanges<'a, T: ExchangeContext + 'a>(
+            self,
+            context: &'a mut T,
+        ) -> Self::ExIter<'a, T> {
+            let dex_lite_address = self.pool_info.dex_lite_address;
+            let dex_key = self.pool_info.dex_key.clone();
+            
+            let request: Option<_> = try {
+                let p = Arc::new(self);
+                
+                let fw = FluidDexLiteExchange {
+                    pool_info: Arc::clone(&p),
+                    request: FluidDexLiteExchangeRequest {
+                        direction: SwapDirection::Token0ToToken1,
+                        exchange_info: ExchangeInfo {
+                            exchange_id: context.get_exchange_id(&dex_lite_address),
+                            source: context.get_token_id(&p.pool_info.dex_key.token0)?,
+                            target: context.get_token_id(&p.pool_info.dex_key.token1)?,
+                        },
+                    },
+                    meta: Arc::new(FluidDexLiteMeta {
+                        dex_lite_address,
+                        dex_key: dex_key.clone(),
+                        swap0_to1: true,
+                    }),
+                };
+
+                let bw = FluidDexLiteExchange {
+                    pool_info: Arc::clone(&p),
+                    request: FluidDexLiteExchangeRequest {
+                        direction: SwapDirection::Token1ToToken0,
+                        exchange_info: ExchangeInfo {
+                            exchange_id: context.get_exchange_id(&dex_lite_address),
+                            source: context.get_token_id(&p.pool_info.dex_key.token1)?,
+                            target: context.get_token_id(&p.pool_info.dex_key.token0)?,
+                        },
+                    },
+                    meta: Arc::new(FluidDexLiteMeta {
+                        dex_lite_address,
+                        dex_key,
+                        swap0_to1: false,
+                    }),
+                };
+
+                [fw, bw].into_iter()
+            };
+
+            request.into_iter().flatten()
+        }
+    }
+    
+    impl Swap for FluidDexLiteExchange {
+        type Error = FluidDexLiteError;
+
+        #[inline(never)]
+        fn swap(&self, amount: SafeU256) -> MathResult<SafeU256, Self::Error> {
+            match self.request.direction {
+                SwapDirection::Token0ToToken1 => calculate_swap_0_to_1(&self.pool_info, amount),
+                SwapDirection::Token1ToToken0 => calculate_swap_1_to_0(&self.pool_info, amount),
+            }
+        }
+    }
+
+    impl SwapGas for FluidDexLiteExchange {
+        type Methods = FluidDexLiteMethods;
+        fn swap_gas(&self, gas_storage: &impl GasStorage<Self::Methods>) -> Gas {
+            const SWAP_SINGLE_GAS: Gas = 10000; // FluidDexLite swap gas cost
+            gas_storage.get_method_price(FluidDexLiteMethods::SwapSingle).unwrap_or(SWAP_SINGLE_GAS) + 
+            gas_storage.approve_gas(self.request.exchange_info.source)
+        }
+    }
+
+    /// =========== IMPLEMENTATION DETAILS BELOW ==============
+
+    pub type FluidDexLiteExchange = PoolRequestMeta<Arc<FlowerData>, FluidDexLiteExchangeRequest, Arc<FluidDexLiteMeta>>;
+
+    // Math functions for FluidDexLite calculations
+    mod fluid_math {
+        use super::*;
+
+
+
+
+        // Square root implementation for SafeU256
+        pub fn sqrt(value: SafeU256) -> MathResult<SafeU256, FluidDexLiteError> {
+            if value < SafeU256::from(2u64) {
+                return MathResult::ok(value);
+            }
+
+            let mut x = value;
+            let mut result = value;
+
+            // Newton's method
+            while x > SafeU256::zero() {
+                x = ((result + (value / result)?)? / SafeU256::from(2u64))?;
+                if x >= result {
+                    break;
+                }
+                result = x;
+            }
+
+            MathResult::ok(result)
+        }
+
+        // Expand center price from compressed format
+        pub fn expand_center_price(center_price: SafeU256) -> MathResult<SafeU256, FluidDexLiteError> {
+            let mantissa = center_price >> DEFAULT_EXPONENT_SIZE;
+            let exponent = center_price & DEFAULT_EXPONENT_MASK;
+            let result = mantissa << exponent;
+            MathResult::ok(result)
+        }
+
+        // Helper function for linear interpolation during shifting
+        pub fn calc_shifting_done(
+            current: SafeU256,
+            old: SafeU256,
+            time_passed: SafeU256,
+            shift_duration: SafeU256,
+        ) -> MathResult<SafeU256, FluidDexLiteError> {
+            if current > old {
+                let diff = (current - old)?;
+                let adjustment = ((diff * time_passed)? / shift_duration)?;
+                (old + adjustment).cast_err()
+            } else {
+                let diff = (old - current)?;
+                let adjustment = ((diff * time_passed)? / shift_duration)?;
+                (old - adjustment).cast_err()
+            }
+        }
+
+        // Calculate reserves outside range
+        pub fn calculate_reserves_outside_range(
+            geometric_mean: SafeU256,
+            pa: SafeU256,
+            rx: SafeU256,
+            ry: SafeU256,
+        ) -> MathResult<(SafeU256, SafeU256), FluidDexLiteError> {
+            let p1 = (pa - geometric_mean)?;
+            
+            let numerator = ((geometric_mean * rx)? + (ry * PRICE_PRECISION)?)?;
+            let p2 = (numerator / ((SafeU256::from(2u64) * p1)?))?;
+            
+            let term1 = ((rx * ry)? * PRICE_PRECISION)?;
+            let discriminant = ((term1 / p1)? + (p2 * p2)?)?;
+            
+            let sqrt_discriminant = sqrt(discriminant)?;
+            let xa = (p2 + sqrt_discriminant)?;
+            let yb = ((xa * geometric_mean)? / PRICE_PRECISION)?;
+            
+            MathResult::ok((xa, yb))
+        }
+    }
+
+    // Unpack dex variables from the packed uint256
+    pub fn unpack_dex_variables(dex_variables: SafeU256) -> UnpackedDexVariables {
+        UnpackedDexVariables {
+            fee: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_FEE)) & X13,
+            revenue_cut: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_REVENUE_CUT)) & X7,
+            rebalancing_status: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_REBALANCING_STATUS)) & X2,
+            center_price_shift_active: ((dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_CENTER_PRICE_SHIFT_ACTIVE)) & X1) == SafeU256::one(),
+            center_price: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_CENTER_PRICE)) & X40,
+            center_price_contract_address: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_CENTER_PRICE_CONTRACT_ADDRESS)) & X19,
+            range_percent_shift_active: ((dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_RANGE_PERCENT_SHIFT_ACTIVE)) & X1) == SafeU256::one(),
+            upper_percent: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_UPPER_PERCENT)) & X14,
+            lower_percent: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_LOWER_PERCENT)) & X14,
+            threshold_percent_shift_active: ((dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_THRESHOLD_PERCENT_SHIFT_ACTIVE)) & X1) == SafeU256::one(),
+            upper_shift_threshold_percent: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_UPPER_SHIFT_THRESHOLD_PERCENT)) & X7,
+            lower_shift_threshold_percent: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_LOWER_SHIFT_THRESHOLD_PERCENT)) & X7,
+            token0_decimals: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_TOKEN_0_DECIMALS)) & X5,
+            token1_decimals: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_TOKEN_1_DECIMALS)) & X5,
+            token0_total_supply_adjusted: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_TOKEN_0_TOTAL_SUPPLY_ADJUSTED)) & X60,
+            token1_total_supply_adjusted: (dex_variables >> SafeU256::from(BITS_DEX_LITE_DEX_VARIABLES_TOKEN_1_TOTAL_SUPPLY_ADJUSTED)) & X60,
+        }
+    }
+
+    // Calculate current range percents (equivalent to _calcRangeShifting)
+    fn calc_range_shifting(
+        upper_range: SafeU256,
+        lower_range: SafeU256,
+        range_shift: SafeU256,
+        simulation_timestamp: SafeU256,
+    ) -> MathResult<(SafeU256, SafeU256), FluidDexLiteError> {
+        let shift_duration = (range_shift >> SafeU256::from(BITS_DEX_LITE_RANGE_SHIFT_TIME_TO_SHIFT)) & X20;
+        let start_timestamp = (range_shift >> SafeU256::from(BITS_DEX_LITE_RANGE_SHIFT_TIMESTAMP)) & X33;
+
+        if (start_timestamp + shift_duration)? < simulation_timestamp {
+            // shifting fully done
+            return MathResult::ok((upper_range, lower_range));
+        }
+
+        let time_passed = (simulation_timestamp - start_timestamp)?;
+        let old_upper_range = (range_shift >> SafeU256::from(BITS_DEX_LITE_RANGE_SHIFT_OLD_UPPER_RANGE_PERCENT)) & X14;
+        let old_lower_range = (range_shift >> SafeU256::from(BITS_DEX_LITE_RANGE_SHIFT_OLD_LOWER_RANGE_PERCENT)) & X14;
+
+        let new_upper = fluid_math::calc_shifting_done(upper_range, old_upper_range, time_passed, shift_duration)?;
+        let new_lower = fluid_math::calc_shifting_done(lower_range, old_lower_range, time_passed, shift_duration)?;
+
+        MathResult::ok((new_upper, new_lower))
+    }
+
+
+
+    // Full pricing calculation (equivalent to _getPricesAndReserves)
+    pub fn get_prices_and_reserves(
+        state: &FlowerData,
+    ) -> MathResult<PricingResult, FluidDexLiteError> {
+        // Calculate simulation timestamp using BlockMeta (Barter team guidance)
+        // "timestamp + avg_block_interval to get the correct prediction"
+        let next_block_timestamp_ms = state.block_meta.timestamp * 1000 + state.block_meta.avg_block_interval_ms;
+        let simulation_timestamp = SafeU256::from(next_block_timestamp_ms / 1000);
+
+        let unpacked_vars = unpack_dex_variables(state.dex_variables);
+
+        // Calculate center price
+        let mut center_price: SafeU256;
+
+        // Revert if external price contract is configured
+        if unpacked_vars.center_price_contract_address != SafeU256::zero() {
+            return MathResult::err(FluidDexLiteError::MathError(SafeMathError::Div)); // External price contracts not supported
+        }
+
+        // Revert if center price shifting is active  
+        if unpacked_vars.center_price_shift_active {
+            return MathResult::err(FluidDexLiteError::MathError(SafeMathError::Div)); // Center price shifting not supported
+        }
+
+        // Use stored center price
+        center_price = fluid_math::expand_center_price(unpacked_vars.center_price)?;
+
+        // Calculate range percents
+        let mut upper_range_percent = unpacked_vars.upper_percent;
+        let mut lower_range_percent = unpacked_vars.lower_percent;
+
+        if unpacked_vars.range_percent_shift_active {
+            let (new_upper, new_lower) = calc_range_shifting(
+                upper_range_percent,
+                lower_range_percent,
+                state.range_shift,
+                simulation_timestamp,
+            )?;
+            upper_range_percent = new_upper;
+            lower_range_percent = new_lower;
+        }
+
+        // Calculate range prices
+        let mut upper_range_price = ((center_price * FOUR_DECIMALS)? / (FOUR_DECIMALS - upper_range_percent)?)?;
+        let mut lower_range_price = ((center_price * (FOUR_DECIMALS - lower_range_percent)?)? / FOUR_DECIMALS)?;
+
+        // Handle rebalancing logic
+        let rebalancing_status = unpacked_vars.rebalancing_status;
+
+        if rebalancing_status > SafeU256::one() {
+            let mut center_price_shift_data = SafeU256::zero();
+
+            if rebalancing_status == SafeU256::from(2u64) {
+                // Price shifting towards upper range
+                center_price_shift_data = state.center_price_shift;
+                let shifting_time = (center_price_shift_data >> SafeU256::from(BITS_DEX_LITE_CENTER_PRICE_SHIFT_SHIFTING_TIME)) & X24;
+                let last_interaction_timestamp = center_price_shift_data & X33; // BITS_DEX_LITE_CENTER_PRICE_SHIFT_LAST_INTERACTION_TIMESTAMP = 0
+                let time_elapsed = (simulation_timestamp - last_interaction_timestamp)?;
+
+                if time_elapsed < shifting_time {
+                    let price_diff = (upper_range_price - center_price)?;
+                    let adjustment = (price_diff * time_elapsed)? / shifting_time;
+                    center_price = (center_price + adjustment)?;
+                } else {
+                    // 100% price shifted
+                    center_price = upper_range_price;
+                }
+            } else if rebalancing_status == SafeU256::from(3u64) {
+                // Price shifting towards lower range
+                center_price_shift_data = state.center_price_shift;
+                let shifting_time = (center_price_shift_data >> SafeU256::from(BITS_DEX_LITE_CENTER_PRICE_SHIFT_SHIFTING_TIME)) & X24;
+                // CRITICAL FIX: Extract timestamp from centerPriceShift, not from separate field
+                let last_interaction_timestamp = center_price_shift_data & X33; // BITS_DEX_LITE_CENTER_PRICE_SHIFT_LAST_INTERACTION_TIMESTAMP = 0
+                let time_elapsed = (simulation_timestamp - last_interaction_timestamp)?;
+
+                if time_elapsed < shifting_time {
+                    let price_diff = (center_price - lower_range_price)?;
+                    let adjustment = (price_diff * time_elapsed)? / shifting_time;
+                    center_price = (center_price - adjustment)?;
+            } else {
+                    // 100% price shifted
+                    center_price = lower_range_price;
+                }
+            }
+
+            // Apply min/max bounds if rebalancing happened
+            if center_price_shift_data > SafeU256::zero() {
+                // Check max center price
+                let mut max_center_price = (center_price_shift_data >> SafeU256::from(BITS_DEX_LITE_CENTER_PRICE_SHIFT_MAX_CENTER_PRICE)) & X28;
+                max_center_price = fluid_math::expand_center_price(max_center_price)?;
+
+                if center_price > max_center_price {
+                    center_price = max_center_price;
+                } else {
+                    // Check min center price
+                    let mut min_center_price = (center_price_shift_data >> SafeU256::from(BITS_DEX_LITE_CENTER_PRICE_SHIFT_MIN_CENTER_PRICE)) & X28;
+                    min_center_price = fluid_math::expand_center_price(min_center_price)?;
+
+                    if center_price < min_center_price {
+                        center_price = min_center_price;
+                    }
+                }
+
+                // Update range prices as center price moved
+                upper_range_price = ((center_price * FOUR_DECIMALS)? / (FOUR_DECIMALS - upper_range_percent)?)?;
+                lower_range_price = ((center_price * (FOUR_DECIMALS - lower_range_percent)?)? / FOUR_DECIMALS)?;
+            }
+        }
+
+        // Calculate geometric mean
+        let geometric_mean: SafeU256;
+
+        let very_large_threshold = SafeU256::exp10(SafeU256::from(38u64));
+        if upper_range_price < very_large_threshold {
+            // Normal case
+            geometric_mean = fluid_math::sqrt((upper_range_price * lower_range_price)?)?;
+        } else {
+            // Handle very large prices
+            let scale = SafeU256::exp10(SafeU256::from(18u64));
+            let scaled_upper = (upper_range_price / scale)?;
+            let scaled_lower = (lower_range_price / scale)?;
+            geometric_mean = (fluid_math::sqrt((scaled_upper * scaled_lower)?)? * scale)?;
+        }
+        
+        // Calculate imaginary reserves
+        let mut token0_imaginary_reserves: SafeU256;
+        let mut token1_imaginary_reserves: SafeU256;
+        
+        // Use the raw total supply adjusted values directly - they are already in 9-decimal precision
+        let token0_supply = unpacked_vars.token0_total_supply_adjusted;
+        let token1_supply = unpacked_vars.token1_total_supply_adjusted;
+
+        if geometric_mean < PRICE_PRECISION {
+            let (xa, yb) = fluid_math::calculate_reserves_outside_range(
+                geometric_mean,
+                upper_range_price,
+                token0_supply,
+                token1_supply,
+            )?;
+            token0_imaginary_reserves = xa;
+            token1_imaginary_reserves = yb;
+        } else {
+            let inverse_geometric_mean = (SafeU256::exp10(SafeU256::from(54u64)) / geometric_mean)?;
+            let inverse_lower_price = (SafeU256::exp10(SafeU256::from(54u64)) / lower_range_price)?;
+            
+            let (xa, yb) = fluid_math::calculate_reserves_outside_range(
+                inverse_geometric_mean,
+                inverse_lower_price,
+                token1_supply,
+                token0_supply,
+            )?;
+            // CRITICAL FIX: Swapped assignment to match Solidity line 493
+            token1_imaginary_reserves = xa;  // First return value goes to token1
+            token0_imaginary_reserves = yb;  // Second return value goes to token0
+        }
+
+        // Add actual supplies to imaginary reserves
+        token0_imaginary_reserves = (token0_imaginary_reserves + token0_supply)?;
+        token1_imaginary_reserves = (token1_imaginary_reserves + token1_supply)?;
+
+        MathResult::ok(PricingResult {
+            center_price,
+            upper_range_price,
+            lower_range_price,
+            token0_imaginary_reserves,
+            token1_imaginary_reserves,
+        })
+    }
+
+    // Calculate swap for exact input (Token0 to Token1)
+    fn calculate_swap_0_to_1(
+        state: &FlowerData,
+        amount_in: SafeU256,
+    ) -> MathResult<SafeU256, FluidDexLiteError> {
+        let unpacked_vars = unpack_dex_variables(state.dex_variables);
+
+        // CRITICAL: Check if dex is initialized (contract line 15-17)
+        if state.dex_variables == SafeU256::zero() {
+            return MathResult::err(FluidDexLiteError::DexNotInitialized);
+        }
+
+        // Get current pricing with all shifting logic
+        let pricing = get_prices_and_reserves(state)?;
+
+        let mut adjusted_amount_in = amount_in;
+
+        // Apply decimal adjustments for token0 (contract lines 26-31)
+        let token0_decimals = unpacked_vars.token0_decimals;
+        
+        if token0_decimals > TOKENS_DECIMALS_PRECISION {
+            let power = (token0_decimals - TOKENS_DECIMALS_PRECISION)?;
+            let divisor = SafeU256::exp10(power);
+            adjusted_amount_in = (adjusted_amount_in / divisor)?;
+        } else {
+            let power = (TOKENS_DECIMALS_PRECISION - token0_decimals)?;
+            let multiplier = SafeU256::exp10(power);
+            adjusted_amount_in = (adjusted_amount_in * multiplier)?;
+        }
+
+        // CRITICAL: Validate amount (contract lines 33-34)
+        if adjusted_amount_in < FOUR_DECIMALS || adjusted_amount_in > X60 {
+            return MathResult::err(FluidDexLiteError::InvalidSwapAmounts);
+        }
+
+        // CRITICAL: Check against half of reserves (contract lines 36-38)
+        if adjusted_amount_in > (pricing.token0_imaginary_reserves / SafeU256::from(2u64))? {
+            return MathResult::err(FluidDexLiteError::ExcessiveSwapAmount);
+        }
+
+        let fee = ((adjusted_amount_in * unpacked_vars.fee)? / SIX_DECIMALS)?;
+        let amount_in_after_fee = (adjusted_amount_in - fee)?;
+
+        // Constant product formula (contract line 42)
+        let numerator = (amount_in_after_fee * pricing.token1_imaginary_reserves)?;
+        let denominator = (pricing.token0_imaginary_reserves + amount_in_after_fee)?;
+        let mut amount_out = (numerator / denominator)?;
+
+        // CRITICAL: Check token reserves (contract lines 45-47)
+        if unpacked_vars.token1_total_supply_adjusted < amount_out {
+            return MathResult::err(FluidDexLiteError::TokenReservesTooLow);
+        }
+
+        // Calculate updated supplies for reserve ratio check
+        let revenue_cut_fee = ((fee * unpacked_vars.revenue_cut)? / SafeU256::from(100u64))?;
+        let new_token0_supply = (unpacked_vars.token0_total_supply_adjusted + adjusted_amount_in - revenue_cut_fee)?;
+        let new_token1_supply = (unpacked_vars.token1_total_supply_adjusted - amount_out)?;
+
+        // CRITICAL: Check reserve ratio (contract lines 50-52)
+        let min_token1_supply = ((new_token0_supply * pricing.center_price)? / (PRICE_PRECISION * MINIMUM_LIQUIDITY_SWAP))?;
+        if new_token1_supply < min_token1_supply {
+            return MathResult::err(FluidDexLiteError::TokenReservesRatioTooHigh);
+        }
+
+        // Apply decimal adjustments to output for token1 (reverse of input adjustment)
+        let token1_decimals = unpacked_vars.token1_decimals;
+        if token1_decimals > TOKENS_DECIMALS_PRECISION {
+            let power = (token1_decimals - TOKENS_DECIMALS_PRECISION)?;
+            let multiplier = SafeU256::exp10(power);
+            amount_out = (amount_out * multiplier)?;
+        } else {
+            let power = (TOKENS_DECIMALS_PRECISION - token1_decimals)?;
+            let divisor = SafeU256::exp10(power);
+            amount_out = (amount_out / divisor)?;
+        }
+
+        MathResult::ok(amount_out)
+    }
+
+    // Calculate swap for exact input (Token1 to Token0)
+    fn calculate_swap_1_to_0(
+        state: &FlowerData,
+        amount_in: SafeU256,
+    ) -> MathResult<SafeU256, FluidDexLiteError> {
+        let unpacked_vars = unpack_dex_variables(state.dex_variables);
+
+        // CRITICAL: Check if dex is initialized (contract line 15-17)
+        if state.dex_variables == SafeU256::zero() {
+            return MathResult::err(FluidDexLiteError::DexNotInitialized);
+        }
+
+        // Get current pricing with all shifting logic
+        let pricing = get_prices_and_reserves(state)?;
+
+        let mut adjusted_amount_in = amount_in;
+
+        // Apply decimal adjustments for token1 (contract lines 54-59)
+        let token1_decimals = unpacked_vars.token1_decimals;
+        if token1_decimals > TOKENS_DECIMALS_PRECISION {
+            let power = (token1_decimals - TOKENS_DECIMALS_PRECISION)?;
+            let divisor = SafeU256::exp10(power);
+            adjusted_amount_in = (adjusted_amount_in / divisor)?;
+        } else {
+            let power = (TOKENS_DECIMALS_PRECISION - token1_decimals)?;
+            let multiplier = SafeU256::exp10(power);
+            adjusted_amount_in = (adjusted_amount_in * multiplier)?;
+        }
+
+        // CRITICAL: Validate amount (contract lines 61-62)
+        if adjusted_amount_in < FOUR_DECIMALS || adjusted_amount_in > X60 {
+            return MathResult::err(FluidDexLiteError::InvalidSwapAmounts);
+        }
+
+        // CRITICAL: Check against half of reserves (contract lines 64-66)
+        if adjusted_amount_in > (pricing.token1_imaginary_reserves / SafeU256::from(2u64))? {
+            return MathResult::err(FluidDexLiteError::ExcessiveSwapAmount);
+        }
+
+        let fee = ((adjusted_amount_in * unpacked_vars.fee)? / SIX_DECIMALS)?;
+        let amount_in_after_fee = (adjusted_amount_in - fee)?;
+
+        // Constant product formula (contract line 70)
+        let numerator = (amount_in_after_fee * pricing.token0_imaginary_reserves)?;
+        let denominator = (pricing.token1_imaginary_reserves + amount_in_after_fee)?;
+        let mut amount_out = (numerator / denominator)?;
+
+        // CRITICAL: Check token reserves (contract lines 73-75)
+        if unpacked_vars.token0_total_supply_adjusted < amount_out {
+            return MathResult::err(FluidDexLiteError::TokenReservesTooLow);
+        }
+
+        // Calculate updated supplies for reserve ratio check
+        let revenue_cut_fee = ((fee * unpacked_vars.revenue_cut)? / SafeU256::from(100u64))?;
+        let new_token1_supply = (unpacked_vars.token1_total_supply_adjusted + adjusted_amount_in - revenue_cut_fee)?;
+        let new_token0_supply = (unpacked_vars.token0_total_supply_adjusted - amount_out)?;
+
+        // CRITICAL: Check reserve ratio (contract lines 78-80)
+        let min_token0_supply = ((new_token1_supply * PRICE_PRECISION)? / (pricing.center_price * MINIMUM_LIQUIDITY_SWAP))?;
+        if new_token0_supply < min_token0_supply {
+            return MathResult::err(FluidDexLiteError::TokenReservesRatioTooHigh);
+        }
+
+        // Apply decimal adjustments to output for token0
+        let token0_decimals = unpacked_vars.token0_decimals;
+        if token0_decimals > TOKENS_DECIMALS_PRECISION {
+            let power = (token0_decimals - TOKENS_DECIMALS_PRECISION)?;
+            let multiplier = SafeU256::exp10(power);
+            amount_out = (amount_out * multiplier)?;
+                } else {
+            let power = (TOKENS_DECIMALS_PRECISION - token0_decimals)?;
+            let divisor = SafeU256::exp10(power);
+            amount_out = (amount_out / divisor)?;
+        }
+
+        MathResult::ok(amount_out)
+    }
+}

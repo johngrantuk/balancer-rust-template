@@ -38,3 +38,4 @@ macro_rules! declare_sol_contract{
 
 declare_sol_contract!(DODO_V1_POOL);
 declare_sol_contract!(DODO_V1_REGISTRY);
+declare_sol_contract!(FLUID_DEX_LITE);

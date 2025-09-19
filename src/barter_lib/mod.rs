@@ -53,3 +53,11 @@ where
         self.as_ref().iter().position(|x| x == val)
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BlockMeta {
+    pub hash: B256,
+    pub number: u64,
+    pub timestamp: u64,
+    pub avg_block_interval_ms: u64,
+}
