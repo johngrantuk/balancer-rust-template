@@ -22,14 +22,14 @@ macro_rules! u256const {
 #[macro_export]
 macro_rules! su256const_str {
     ($val:expr) => {
-        const { $crate::barter_lib::unwrap_const($crate::u256::parse_u256_hex($val)) }
+        const { $crate::barter_lib::unwrap_const($crate::barter_lib::u256::parse_u256_hex($val)) }
     };
 }
 
 #[macro_export]
 macro_rules! e {
     ($val:literal) => {
-        const { $crate::u256::pow10_u256($val) }
+        const { $crate::barter_lib::u256::pow10_u256($val) }
     };
 }
 

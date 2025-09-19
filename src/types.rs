@@ -90,6 +90,7 @@ pub mod fluid_dex_lite {
     }
 
     /// Unpacked dex variables for easier access during calculations
+    #[allow(unused)]
     #[derive(Debug, Clone)]
     pub struct UnpackedDexVariables {
         pub fee: SafeU256,
@@ -111,6 +112,7 @@ pub mod fluid_dex_lite {
     }
 
     /// Result of pricing calculations
+    #[allow(unused)]
     #[derive(Debug, Clone)]
     pub struct PricingResult {
         pub center_price: SafeU256,

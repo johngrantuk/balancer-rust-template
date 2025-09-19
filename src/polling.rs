@@ -61,9 +61,6 @@ pub mod fluid_dex_lite {
         
         // Calculate storage slots for mappings using the dexId
         let dex_id_bytes = pool.dex_id.0.to_be_bytes::<32>();
-
-        dbg!(dex_id_bytes);
-        
         let dex_variables_slot = calculate_mapping_storage_slot(DEX_LITE_DEX_VARIABLES_SLOT, &dex_id_bytes);
         let center_price_shift_slot = calculate_mapping_storage_slot(DEX_LITE_CENTER_PRICE_SHIFT_SLOT, &dex_id_bytes);
         let range_shift_slot = calculate_mapping_storage_slot(DEX_LITE_RANGE_SHIFT_SLOT, &dex_id_bytes);

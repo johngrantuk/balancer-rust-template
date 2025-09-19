@@ -36,6 +36,16 @@ mod polling;
 mod execution;
 mod contracts;
 
+pub type MultichainAlloyProvider = FillProvider<JoinFill<alloy::providers::Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>, RootProvider<AnyNetwork>, AnyNetwork>;
+
+pub async fn create_multichain_alloy_provider(url: &str, chain: NamedChain) -> MultichainAlloyProvider{
+    ProviderBuilder::new_with_network::<AnyNetwork>()
+        .with_chain(chain)
+        .connect(url)
+        .await
+        .unwrap()
+}
+
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct EnvConfig {
     pub mainnet_rpc_url: String,
@@ -46,7 +56,11 @@ async fn main() {
     dotenvy::dotenv_override().unwrap();
     let env_config: EnvConfig = envy::from_env().unwrap();
     let provider = create_multichain_alloy_provider(&env_config.mainnet_rpc_url, NamedChain::Mainnet).await;
-    
+    dodo_v1(&provider).await;
+    fluid_dex_lite(&provider).await;
+}
+
+async fn dodo_v1(provider: &MultichainAlloyProvider) {
     let dodos = discovery::dodo_v1::get_all_pools(&provider).await;
 
     // use tx 0x0fe505f086ecd54ae3490dc0fd99de363ad635d53583bf7750ef30ad66f5a27f as reference
@@ -79,15 +93,42 @@ async fn main() {
 
     let encoded_calldata = execution::dodo_v1::encode(input, 1.into(), &exchange.meta);
 
-    println!("Encoded calldata: {:#?}", encoded_calldata);
+    println!("DodoV1 encoded calldata: {:#?}", encoded_calldata);
 }
 
-pub type MultichainAlloyProvider = FillProvider<JoinFill<alloy::providers::Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>, RootProvider<AnyNetwork>, AnyNetwork>;
 
-pub async fn create_multichain_alloy_provider(url: &str, chain: NamedChain) -> MultichainAlloyProvider{
-    ProviderBuilder::new_with_network::<AnyNetwork>()
-        .with_chain(chain)
-        .connect(url)
-        .await
-        .unwrap()
+async fn fluid_dex_lite(provider: &MultichainAlloyProvider) {
+    let pools = discovery::fluid_dex_lite::get_all_pools(&provider).await;
+
+    // use tx 0x346d528286626b047b193e2bda82805d6b1c48e1660a41cfd0ffb67a735774ed as reference
+    let tx_block_number = 23119609;
+    let input = su256const!(999249930);
+    let output =  su256const!(999187940);
+    let pool = su256const_str!("0x6dd161107ef07bb8");
+
+    let pool_info = pools.iter().find(|x| x.dex_id == pool).unwrap();
+    let block = tx_block_number - 1; // tx in block N generally happens on a blockchain state of block N-1
+
+    let block = provider.get_block_by_number(block.into()).await.unwrap().unwrap();
+            
+    let block_meta = BlockMeta {
+        hash: block.header.hash,
+        number: block.header.number,
+        timestamp: block.header.timestamp,
+        avg_block_interval_ms: 12000,
+    };
+
+    let flower_data = polling::fluid_dex_lite::get_flower_data(&provider, pool_info.clone(), &block_meta).await;
+    let exchange = flower_data.to_exchanges(&mut barter_lib::amm_lib::EmptyExchangeContext)
+        .filter(|x| x.meta.swap0_to1 == true)
+        .next()
+        .unwrap();
+
+    let result = exchange.swap(input).unwrap();
+
+    assert_eq!(result, output); // https://etherscan.io/tx/0x346d528286626b047b193e2bda82805d6b1c48e1660a41cfd0ffb67a735774ed
+
+    let encoded_calldata = execution::fluid_dex_lite::encode(input, 1.into(), &exchange.meta);
+
+    println!("FluidDexLite encoded calldata: {:#?}", encoded_calldata);
 }
