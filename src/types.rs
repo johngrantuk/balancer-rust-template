@@ -209,6 +209,21 @@ pub mod balancer_v3_stable_surge {
         pub tokens: Vec<Address>,  // Multi-token support
         pub decimal_scaling_factors: Vec<SafeU256>,
         pub amplification_parameter_precision: SafeU256,
+        pub supports_unbalanced_liquidity: bool,
+        pub hook_type: String,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Deserialize, Serialize, Clone, Eq, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct FlowerData {
+        pub pool_info: PoolInfo,
+        pub token_rates: Vec<SafeU256>,
+        pub balances_live_scaled_18: Vec<SafeU256>,
+        pub swap_fee: SafeU256,
+        pub aggregate_swap_fee: SafeU256,
+        pub total_supply: SafeU256,
+        pub amp: SafeU256,
         pub max_surge_fee_percentage: SafeU256,
         pub surge_threshold_percentage: SafeU256,
     }
