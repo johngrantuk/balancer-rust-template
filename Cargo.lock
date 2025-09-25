@@ -841,6 +841,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "balancer-maths-rust"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36560b005bdaaf3bc6b7c0526f7e332eda35fa1afcd6f6e549d308411f4ad649"
+dependencies = [
+ "lazy_static",
+ "num-bigint",
+ "num-traits",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "barter-template"
 version = "0.1.0"
 dependencies = [
@@ -848,11 +861,13 @@ dependencies = [
  "alloy-chains",
  "alloy-primitives",
  "arrayvec",
+ "balancer-maths-rust",
  "derive_more 1.0.0",
  "dotenvy",
  "envy",
  "futures",
  "num",
+ "num-bigint",
  "num-derive",
  "num-traits",
  "paste",
@@ -2257,6 +2272,7 @@ checksum = "a5e44f723f1133c9deac646763579fdb3ac745e418f2a7af9cd0c431da1f20b9"
 dependencies = [
  "num-integer",
  "num-traits",
+ "serde",
 ]
 
 [[package]]

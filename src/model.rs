@@ -1422,3 +1422,259 @@ pub mod fluid_dex_lite {
         MathResult::ok(amount_out)
     }
 }
+
+pub mod balancer_v3_stable_surge {
+    use std::sync::Arc;
+    use crate::barter_lib::amm_lib::*;
+
+    use crate::barter_lib::common::Swap;
+    use crate::{
+        barter_lib::{amm_lib::ExchangeInfo, safe_math::{MathResult, SafeMathError}, SafeU256}, types::balancer_v3_stable_surge::FlowerData
+    };
+    use balancer_maths_rust::vault::Vault; 
+    use balancer_maths_rust::common::types::{SwapInput, SwapKind, PoolStateOrBuffer};
+    use balancer_maths_rust::pools::stable::{StableState, StableMutable};
+    use balancer_maths_rust::common::types::BasePoolState;
+    use balancer_maths_rust::hooks::stable_surge::StableSurgeHookState;
+    use balancer_maths_rust::hooks::types::HookState;
+
+    pub type BalancerV3StableSurgeError = SafeMathError;
+    #[derive(Debug, Clone)]
+    pub struct BalancerV3ExchangeRequest {
+        pub source_token: Address,
+        pub target_token: Address,
+        pub exchange_info: ExchangeInfo,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize, Hash, Eq, PartialEq, Clone)]
+    #[serde(rename_all = "camelCase")]
+    #[serde(deny_unknown_fields)]
+    pub struct BalancerV3Meta {
+        pub pool_address: Address,
+        pub source_token: Address,
+        pub target_token: Address,
+    }
+
+    #[allow(unused)]
+    impl GetAddress for BalancerV3Meta {
+        fn get_address(&self) -> Address {
+            self.pool_address
+        }
+    }
+    #[allow(unused)]
+    impl ToExchanges for FlowerData {
+        type Ex = BalancerV3StableSurgeExchange;
+        type ExIter<'a, T: ExchangeContext + 'a> =
+            impl Iterator<Item = Self::Ex> + 'a;
+
+        fn to_exchanges<
+            'a,
+            T: ExchangeContext + 'a,
+        >(
+            self,
+            context: &'a mut T,
+        ) -> Self::ExIter<'a, T> {
+            let pool_address = self.pool_info.address;
+            let tokens = self.pool_info.tokens.clone();
+            let p = Arc::new(self);
+            
+            // Generate exchanges for all token pairs
+            let mut exchanges = Vec::new();
+            for (i, &token_a) in tokens.iter().enumerate() {
+                for (j, &token_b) in tokens.iter().enumerate() {
+                    // Skip same token pairs
+                    if i == j {
+                        continue;
+                    }
+                    
+                    // Get token IDs, skip if any token is not found
+                    if let (Some(source_id), Some(target_id)) = (
+                        context.get_token_id(&token_a),
+                        context.get_token_id(&token_b)
+                    ) {
+                        exchanges.push(BalancerV3StableSurgeExchange {
+                            pool_info: Arc::clone(&p),
+                            request: BalancerV3ExchangeRequest {
+                                source_token: token_a,
+                                target_token: token_b,
+                                exchange_info: ExchangeInfo {
+                                    exchange_id: context.get_exchange_id(&p.pool_info.address),
+                                    source: source_id,
+                                    target: target_id,
+                                },
+                            },
+                            meta: Arc::new(BalancerV3Meta {
+                                pool_address,
+                                source_token: token_a,
+                                target_token: token_b,
+                            }),
+                        });
+                    }
+                }
+            }
+
+            exchanges.into_iter()
+        }
+    }
+    
+    #[allow(unused)]
+    impl Swap for BalancerV3StableSurgeExchange {
+        type Error = BalancerV3StableSurgeError;
+
+        #[inline(never)]
+        fn swap(&self, amount: SafeU256) -> MathResult<SafeU256, Self::Error> {
+            let vault = Vault::new();
+
+            let swap_input = SwapInput {
+                swap_kind: SwapKind::GivenIn,
+                amount_raw: amount.to_big_int(),
+                token_in: self.request.source_token.to_string(),
+                token_out: self.request.target_token.to_string(),
+            };
+
+            let pool_state = create_stable_state_from_pool_info(&self.pool_info);
+            let hook_state = create_hook_state(&self.pool_info);
+
+            let output_amount = vault.swap(
+                &swap_input,
+                &PoolStateOrBuffer::Pool(Box::new(pool_state.into())),
+                Some(&HookState::StableSurge(hook_state)),
+            );
+
+            match output_amount {
+                Ok(big_int) => {
+                    let result = SafeU256::from_dec_str(&big_int.to_string()).unwrap_or(SafeU256::zero());
+                    MathResult::ok(result)
+                },
+                Err(_) => MathResult::err(SafeMathError::Div),
+            }
+        }
+    }
+
+    #[allow(unused)]
+    impl SwapGas for BalancerV3StableSurgeExchange {
+        type Methods = ();
+        fn swap_gas(&self, gas_storage: &impl GasStorage<Self::Methods>) -> Gas {
+            // https://github.com/balancer/balancer-v3-monorepo/blob/main/pkg/pool-hooks/test/gas/.hardhat-snapshots/%5BStableSurgePool%20-%20WithRate%5D%20swap%20single%20token%20exact%20in%20with%20fees%20-%20cold%20slots
+            return 239900;
+        }
+    }
+
+    /// =========== IMPLEMENTATION DETAILS BELOW ==============
+
+    pub type BalancerV3StableSurgeExchange = PoolRequestMeta<Arc<FlowerData>, BalancerV3ExchangeRequest, Arc<BalancerV3Meta>>;
+
+    /// Creates a StableState for use in balancer-maths-rust from pool_info (FlowerData)
+    fn create_stable_state_from_pool_info(pool_info: &FlowerData) -> StableState {
+        let base_pool_state = BasePoolState {
+            pool_address: pool_info.pool_info.address.to_string(),
+            pool_type: "STABLE".to_string(),
+            tokens: pool_info.pool_info.tokens.iter().map(|addr| addr.to_string()).collect(),
+            scaling_factors: pool_info.pool_info.decimal_scaling_factors.iter().map(|sf| sf.to_big_int()).collect(),
+            token_rates: pool_info.token_rates.iter().map(|rate| rate.to_big_int()).collect(),
+            balances_live_scaled_18: pool_info.balances_live_scaled_18.iter().map(|balance| balance.to_big_int()).collect(),
+            swap_fee: pool_info.swap_fee.to_big_int(),
+            aggregate_swap_fee: pool_info.aggregate_swap_fee.to_big_int(),
+            total_supply: pool_info.total_supply.to_big_int(),
+            supports_unbalanced_liquidity: pool_info.pool_info.supports_unbalanced_liquidity,
+            hook_type: Some(pool_info.pool_info.hook_type.clone()),
+        };
+
+        let stable_mutable = StableMutable {
+            amp: pool_info.amp.to_big_int(),
+        };
+
+        StableState {
+            base: base_pool_state,
+            mutable: stable_mutable,
+        }
+    }
+
+    /// Creates a StableSurgeHookState for use in balancer-maths-rust from pool_info (FlowerData)
+    fn create_hook_state(pool_info: &FlowerData) -> StableSurgeHookState {
+        StableSurgeHookState {
+            hook_type: "StableSurge".to_string(),
+            amp: pool_info.amp.to_big_int(),
+            surge_threshold_percentage: pool_info.surge_threshold_percentage.to_big_int(),
+            max_surge_fee_percentage: pool_info.max_surge_fee_percentage.to_big_int(),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use alloy_primitives::address;
+
+        use crate::{su256const, types::balancer_v3_stable_surge::{PoolInfo}};
+
+        use super::*;
+
+        fn create_test_pool() -> FlowerData {
+            FlowerData {
+                pool_info: PoolInfo {
+                    address: address!("0x75c23271661d9d143dcb617222bc4bec783eff34"),
+                    tokens: vec![
+                        address!("0x7b79995e5f793a07bc00c21412e50ecae098e7f9"),
+                        address!("0xb19382073c7a0addbb56ac6af1808fa49e377b75"),
+                    ],
+                    decimal_scaling_factors: vec![su256const!(1), su256const!(1)],
+                    supports_unbalanced_liquidity: false,
+                    hook_type: "StableSurge".to_string(),
+                },
+                token_rates: vec![
+                    su256const!(1000000000000000000),
+                    su256const!(1000000000000000000),
+                ],
+                balances_live_scaled_18: vec![
+                    su256const!(10000000000000000),
+                    su256const!(10000000000000000000),
+                ],
+                swap_fee: su256const!(10000000000000000),
+                aggregate_swap_fee: su256const!(10000000000000000),
+                total_supply: su256const!(9079062661965173292),
+                amp: su256const!(1000000),
+                max_surge_fee_percentage: su256const!(950000000000000000),
+                surge_threshold_percentage: su256const!(300000000000000000),
+            }
+        }
+
+        #[test]
+        fn test_complete_stable_surge_below_threshold_1() {
+            // Replicating: < surgeThresholdPercentage, should use staticSwapFee
+            // https://www.tdly.co/shared/simulation/e50584b3-d8ed-4633-b261-47401482c7b7
+            let pool = create_test_pool();
+
+            let pool_request_meta: Vec<_> = pool.to_exchanges(&mut EmptyExchangeContext {}).collect();
+            let pool_request_meta = pool_request_meta.into_iter().find(|x| x.request.source_token == address!("0x7b79995e5f793a07bc00c21412e50ecae098e7f9") &&
+                x.request.target_token == address!("0xb19382073c7a0addbb56ac6af1808fa49e377b75")).unwrap();
+            let result_ok = pool_request_meta.swap(su256const!(1000000000000000));
+            assert_eq!(result_ok.unwrap(), su256const!(78522716365403684));
+        }
+        
+        #[test]
+        fn test_complete_stable_surge_below_threshold_2() {
+            // Replicating: < surgeThresholdPercentage, should use staticSwapFee
+            // https://www.tdly.co/shared/simulation/1220e0ec-1d3d-4f2a-8eb0-850fed8d15ed
+            let pool = create_test_pool();
+
+            let pool_request_meta: Vec<_> = pool.to_exchanges(&mut EmptyExchangeContext {}).collect();
+            let pool_request_meta = pool_request_meta.into_iter().find(|x| x.request.source_token == address!("0x7b79995e5f793a07bc00c21412e50ecae098e7f9") &&
+                x.request.target_token == address!("0xb19382073c7a0addbb56ac6af1808fa49e377b75")).unwrap();
+            let result_ok = pool_request_meta.swap(su256const!(10000000000000000));
+            assert_eq!(result_ok.unwrap(), su256const!(452983383563178802));
+        }
+
+        #[test]
+        fn test_complete_stable_surge_above_threshold() {
+            // Replicating: > surgeThresholdPercentage, should use surge fee
+            // https://www.tdly.co/shared/simulation/ce2a1146-68d4-49fc-b9d2-1fbc22086ea5
+            let pool = create_test_pool();
+
+            let pool_request_meta: Vec<_> = pool.to_exchanges(&mut EmptyExchangeContext {}).collect();
+            let pool_request_meta = pool_request_meta.into_iter().find(|x| x.request.source_token == address!("0xb19382073c7a0addbb56ac6af1808fa49e377b75") &&
+                x.request.target_token == address!("0x7b79995e5f793a07bc00c21412e50ecae098e7f9")).unwrap();
+            let result_ok = pool_request_meta.swap(su256const!(8000000000000000000));
+            assert_eq!(result_ok.unwrap(), su256const!(3252130027531260));
+        }
+    }
+
+}

@@ -186,6 +186,11 @@ impl SafeU256 {
     pub fn to_f64_lossy(&self) -> f64 {
         u256_to_f64_lossy(self.0)
     }
+
+    pub fn to_big_int(&self) -> num_bigint::BigInt {
+        let bytes = self.0.to_be_bytes::<32>();
+        num_bigint::BigInt::from_bytes_be(num_bigint::Sign::Plus, &bytes)
+    }
 }
 
 impl From<&SafeU256> for alloy_primitives::U256 {
