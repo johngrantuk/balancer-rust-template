@@ -42,3 +42,4 @@ declare_sol_contract!(FLUID_DEX_LITE);
 declare_sol_contract!(BALANCER_V3_STABLE_POOL);
 declare_sol_contract!(BALANCER_V3_STABLE_SURGE_FACTORY);
 declare_sol_contract!(BALANCER_V3_STABLE_SURGE_HOOK);
+declare_sol_contract!(BALANCER_V3_ROUTER);

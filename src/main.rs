@@ -58,6 +58,7 @@ async fn main() {
     let provider = create_multichain_alloy_provider(&env_config.mainnet_rpc_url, NamedChain::Mainnet).await;
     dodo_v1(&provider).await;
     fluid_dex_lite(&provider).await;
+    balancer_v3_stable_surge(&provider).await;
 }
 
 async fn dodo_v1(provider: &MultichainAlloyProvider) {
@@ -131,4 +132,50 @@ async fn fluid_dex_lite(provider: &MultichainAlloyProvider) {
     let encoded_calldata = execution::fluid_dex_lite::encode(input, 1.into(), &exchange.meta);
 
     println!("FluidDexLite encoded calldata: {:#?}", encoded_calldata);
+}
+
+async fn balancer_v3_stable_surge(provider: &MultichainAlloyProvider) {
+    let balancers = discovery::balancer_v3_stable_surge::get_all_pools(&provider).await;
+    
+    // use tx https://etherscan.io/tx/0x1261393426d06fd7f4102752a55a23f8bdd6c7c4b17810c50cb52e2e6711be74 as reference
+    let tx_block_number = 23428754;
+    let input = su256const!(3065193860415847219494);
+    let output =  su256const!(3396671569706798187938);
+    let pool = address!("0x3e6c8f40D38d0b41c94862e6d4083c65Ce0Ce566");
+
+    let pool_info = balancers.iter().find(|x| x.address == pool).unwrap();
+    let block = tx_block_number - 1; // tx in block N generally happens on a blockchain state of block N-1
+
+    let block = provider.get_block_by_number(block.into()).await.unwrap().unwrap();
+            
+    let block_meta = BlockMeta {
+        hash: block.header.hash,
+        number: block.header.number,
+        timestamp: block.header.timestamp,
+        avg_block_interval_ms: 12000,
+    };
+
+    let flower_data = polling::balancer_v3_stable_surge::get_flower_data(&provider, pool_info.clone(), &block_meta).await;
+
+    let exchanges: Vec<_> = flower_data.clone().to_exchanges(&mut barter_lib::amm_lib::EmptyExchangeContext).collect();
+    println!("Generated {} exchanges for {} tokens", exchanges.len(), flower_data.pool_info.tokens.len());
+    
+    // Print all token pairs
+    for (i, exchange) in exchanges.iter().enumerate() {
+        println!("Exchange {}: {} -> {}", 
+            i, 
+            exchange.meta.source_token, 
+            exchange.meta.target_token
+        );
+    }
+
+    let exchange = exchanges.into_iter().find(|x| x.request.source_token == address!("0x99999999999999Cc837C997B882957daFdCb1Af9") &&
+                x.request.target_token == address!("0x6440f144b7e50D6a8439336510312d2F54beB01D")).unwrap();
+    let result = exchange.swap(input).unwrap();
+    
+    assert_eq!(result, output);
+
+    let encoded_calldata = execution::balancer_v3_stable_surge::encode(input, 1.into(), &exchange.meta);
+
+    println!("BalancerV3StableSurge encoded calldata: {:#?}", encoded_calldata);
 }
