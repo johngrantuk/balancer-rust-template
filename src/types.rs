@@ -208,7 +208,6 @@ pub mod balancer_v3_stable_surge {
         pub address: Address,
         pub tokens: Vec<Address>,  // Multi-token support
         pub decimal_scaling_factors: Vec<SafeU256>,
-        pub amplification_parameter_precision: SafeU256,
         pub supports_unbalanced_liquidity: bool,
         pub hook_type: String,
     }

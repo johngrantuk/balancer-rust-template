@@ -180,9 +180,8 @@ pub mod balancer_v3_stable_surge {
                     address: x,
                     tokens: immutable_data.tokens,
                     decimal_scaling_factors: immutable_data.decimalScalingFactors.into_iter().map(SafeU256::from).collect(),
-                    amplification_parameter_precision: SafeU256::from(immutable_data.amplificationParameterPrecision),
                     supports_unbalanced_liquidity: false,
-                    hook_type: "STABLE_SURGE".to_string(),
+                    hook_type: "StableSurge".to_string(),
                 }
             }
         });
