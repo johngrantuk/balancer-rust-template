@@ -113,6 +113,37 @@ pub mod balancer_v3_stable_surge {
     }
 }
 
+pub mod balancer_v3_reclamm {
+
+    use crate::contracts::BALANCER_V3_ROUTER;
+    use alloy_primitives::{address};
+
+    use super::*;
+
+    pub fn encode(
+        amount_in: SafeU256,
+        min_amount_out: SafeU256,
+        meta: &crate::model::balancer_v3_reclamm::BalancerV3Meta
+    ) -> EncodeResult{
+        let calldata = BALANCER_V3_ROUTER.swapSingleTokenExactIn(
+            meta.pool_address.into(),
+            meta.source_token.into(),
+            meta.target_token.into(),
+            amount_in.into(),
+            min_amount_out.into(),
+            Default::default(),
+            false,
+            "0x".into()
+        ).calldata().clone();
+
+        return EncodeResult {
+            calldata,
+            target: address!("0xAE563E3f8219521950555F5962419C8919758Ea2"),
+            source_interaction: SourceInteraction::Approve // Note - Permit2 is used for approvals
+        };
+    }
+}
+
 #[derive(Debug)]
 #[allow(unused)]
 pub struct EncodeResult {
