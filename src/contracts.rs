@@ -39,3 +39,7 @@ macro_rules! declare_sol_contract{
 declare_sol_contract!(DODO_V1_POOL);
 declare_sol_contract!(DODO_V1_REGISTRY);
 declare_sol_contract!(FLUID_DEX_LITE);
+declare_sol_contract!(BALANCER_V3_STABLE_POOL);
+declare_sol_contract!(BALANCER_V3_STABLE_SURGE_FACTORY);
+declare_sol_contract!(BALANCER_V3_STABLE_SURGE_HOOK);
+declare_sol_contract!(BALANCER_V3_ROUTER);

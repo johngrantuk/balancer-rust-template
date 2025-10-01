@@ -157,3 +157,37 @@ pub mod fluid_dex_lite {
         SafeU256::from_big_endian(&bytes)
     }
 }
+
+pub mod balancer_v3_stable_surge {
+    use alloy_primitives::{address, Address};
+    use crate::barter_lib::SafeU256;
+
+    use super::*;
+    use crate::{contracts::{BalancerV3StablePoolContract, BalancerV3StableSurgeFactoryContract}, types::balancer_v3_stable_surge::PoolInfo};
+
+    pub async fn get_all_pools<P: Provider<N> + Clone, N: Network>(provider: P) -> Vec<PoolInfo> {
+        const FACTORY: Address = address!("0x355bD33F0033066BB3DE396a6d069be57353AD95"); // mainnet
+    
+        let factory = BalancerV3StableSurgeFactoryContract::new(FACTORY.into(), provider.clone());
+        let pools = factory.getPools().call().await.unwrap();
+        let futures = pools.into_iter().map(|x| {
+            let provider = provider.clone();
+            async move {
+                let pool_contract = BalancerV3StablePoolContract::new(x.into(), provider);
+                let immutable_data = pool_contract.getStablePoolImmutableData().call().await.unwrap();
+                
+                PoolInfo {
+                    address: x,
+                    tokens: immutable_data.tokens,
+                    decimal_scaling_factors: immutable_data.decimalScalingFactors.into_iter().map(SafeU256::from).collect(),
+                    supports_unbalanced_liquidity: false,
+                    hook_type: "StableSurge".to_string(),
+                }
+            }
+        });
+
+        let mut pools = futures::future::join_all(futures).await;
+        pools.sort_by_key(|x| x.address);
+        pools
+    }
+}

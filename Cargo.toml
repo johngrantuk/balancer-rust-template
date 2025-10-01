@@ -12,6 +12,7 @@ derive_more = {version = "1.0.0", features = ["full"]}
 dotenvy = "0.15.7"
 envy = "0.4.2"
 num = "0.4.0"
+num-bigint = "0.4.4"
 num-derive = "0.4.0"
 num-traits = "0.2.16"
 reqwest = {version = "0.12.5", features = ["json"]}
@@ -25,3 +26,4 @@ thiserror = "2.0.11"
 tokio = { version = "1.39.3", features = ["macros", "rt-multi-thread"] }
 paste = "1.0.15"
 futures = "0.3.30"
+balancer-maths-rust = "0.1.0"
