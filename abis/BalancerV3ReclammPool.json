@@ -1,0 +1,225 @@
+[
+    {
+        "inputs": [],
+        "name": "getReClammPoolImmutableData",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "contract IERC20[]",
+                        "name": "tokens",
+                        "type": "address[]"
+                    },
+                    {
+                        "internalType": "uint256[]",
+                        "name": "decimalScalingFactors",
+                        "type": "uint256[]"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "tokenAPriceIncludesRate",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "tokenBPriceIncludesRate",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "minSwapFeePercentage",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "maxSwapFeePercentage",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "initialMinPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "initialMaxPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "initialTargetPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "initialDailyPriceShiftExponent",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "initialCenterednessMargin",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "maxCenterednessMargin",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "maxDailyPriceShiftExponent",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "maxDailyPriceRatioUpdateRate",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "minPriceRatioUpdateDuration",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "minPriceRatioDelta",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "balanceRatioAndPriceTolerance",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct ReClammPoolImmutableData",
+                "name": "data",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getReClammPoolDynamicData",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256[]",
+                        "name": "balancesLiveScaled18",
+                        "type": "uint256[]"
+                    },
+                    {
+                        "internalType": "uint256[]",
+                        "name": "tokenRates",
+                        "type": "uint256[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "staticSwapFeePercentage",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalSupply",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "lastTimestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256[]",
+                        "name": "lastVirtualBalances",
+                        "type": "uint256[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "dailyPriceShiftExponent",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "dailyPriceShiftBase",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "centerednessMargin",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "currentPriceRatio",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "currentFourthRootPriceRatio",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "startFourthRootPriceRatio",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "endFourthRootPriceRatio",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint32",
+                        "name": "priceRatioUpdateStartTime",
+                        "type": "uint32"
+                    },
+                    {
+                        "internalType": "uint32",
+                        "name": "priceRatioUpdateEndTime",
+                        "type": "uint32"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isPoolInitialized",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isPoolPaused",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isPoolInRecoveryMode",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct ReClammPoolDynamicData",
+                "name": "data",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getAggregateFeePercentages",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "aggregateSwapFeePercentage",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "aggregateYieldFeePercentage",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]
