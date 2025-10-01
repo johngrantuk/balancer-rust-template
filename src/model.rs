@@ -1678,3 +1678,250 @@ pub mod balancer_v3_stable_surge {
     }
 
 }
+
+
+pub mod balancer_v3_reclamm {
+    use std::sync::Arc;
+    use crate::barter_lib::amm_lib::*;
+
+    use crate::barter_lib::common::Swap;
+    use crate::{
+        barter_lib::{amm_lib::ExchangeInfo, safe_math::{MathResult, SafeMathError}, SafeU256}, types::balancer_v3_reclamm::FlowerData
+    };
+    use balancer_maths_rust::vault::Vault; 
+    use balancer_maths_rust::common::types::{SwapInput, SwapKind, PoolStateOrBuffer};
+    use balancer_maths_rust::pools::reclammv2::{ReClammV2State, ReClammV2Mutable, ReClammV2Immutable};
+    use balancer_maths_rust::common::types::BasePoolState;
+
+    pub type BalancerV3ReclammError = SafeMathError;
+    #[derive(Debug, Clone)]
+    pub struct BalancerV3ExchangeRequest {
+        pub source_token: Address,
+        pub target_token: Address,
+        pub exchange_info: ExchangeInfo,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize, Hash, Eq, PartialEq, Clone)]
+    #[serde(rename_all = "camelCase")]
+    #[serde(deny_unknown_fields)]
+    pub struct BalancerV3Meta {
+        pub pool_address: Address,
+        pub source_token: Address,
+        pub target_token: Address,
+    }
+
+    #[allow(unused)]
+    impl GetAddress for BalancerV3Meta {
+        fn get_address(&self) -> Address {
+            self.pool_address
+        }
+    }
+    #[allow(unused)]
+    impl ToExchanges for FlowerData {
+        type Ex = BalancerV3ReclammExchange;
+        type ExIter<'a, T: ExchangeContext + 'a> =
+            impl Iterator<Item = Self::Ex> + 'a;
+
+        fn to_exchanges<
+            'a,
+            T: ExchangeContext + 'a,
+        >(
+            self,
+            context: &'a mut T,
+        ) -> Self::ExIter<'a, T> {
+            let pool_address = self.pool_info.address;
+            let tokens = self.pool_info.tokens.clone();
+            let p = Arc::new(self);
+            
+            // Generate exchanges for all token pairs
+            let mut exchanges = Vec::new();
+            for (i, &token_a) in tokens.iter().enumerate() {
+                for (j, &token_b) in tokens.iter().enumerate() {
+                    // Skip same token pairs
+                    if i == j {
+                        continue;
+                    }
+                    
+                    // Get token IDs, skip if any token is not found
+                    if let (Some(source_id), Some(target_id)) = (
+                        context.get_token_id(&token_a),
+                        context.get_token_id(&token_b)
+                    ) {
+                        exchanges.push(BalancerV3ReclammExchange {
+                            pool_info: Arc::clone(&p),
+                            request: BalancerV3ExchangeRequest {
+                                source_token: token_a,
+                                target_token: token_b,
+                                exchange_info: ExchangeInfo {
+                                    exchange_id: context.get_exchange_id(&p.pool_info.address),
+                                    source: source_id,
+                                    target: target_id,
+                                },
+                            },
+                            meta: Arc::new(BalancerV3Meta {
+                                pool_address,
+                                source_token: token_a,
+                                target_token: token_b,
+                            }),
+                        });
+                    }
+                }
+            }
+
+            exchanges.into_iter()
+        }
+    }
+    
+    #[allow(unused)]
+    impl Swap for BalancerV3ReclammExchange {
+        type Error = BalancerV3ReclammError;
+
+        #[inline(never)]
+        fn swap(&self, amount: SafeU256) -> MathResult<SafeU256, Self::Error> {
+            let vault = Vault::new();
+
+            let swap_input = SwapInput {
+                swap_kind: SwapKind::GivenIn,
+                amount_raw: amount.to_big_int(),
+                token_in: self.request.source_token.to_string(),
+                token_out: self.request.target_token.to_string(),
+            };
+
+            let pool_state = create_reclamm_state_from_pool_info(&self.pool_info);
+
+            let output_amount = vault.swap(
+                &swap_input,
+                &PoolStateOrBuffer::Pool(Box::new(pool_state.into())),
+                None,
+            );
+
+            match output_amount {
+                Ok(big_int) => {
+                    let result = SafeU256::from_dec_str(&big_int.to_string()).unwrap_or(SafeU256::zero());
+                    MathResult::ok(result)
+                },
+                Err(_) => MathResult::err(SafeMathError::Div),
+            }
+        }
+    }
+
+    #[allow(unused)]
+    impl SwapGas for BalancerV3ReclammExchange {
+        type Methods = ();
+        fn swap_gas(&self, gas_storage: &impl GasStorage<Self::Methods>) -> Gas {
+            // https://github.com/balancer/reclamm/tree/main/test/gas/.hardhat-snapshots
+            return 250800;
+        }
+    }
+
+    /// =========== IMPLEMENTATION DETAILS BELOW ==============
+
+    pub type BalancerV3ReclammExchange = PoolRequestMeta<Arc<FlowerData>, BalancerV3ExchangeRequest, Arc<BalancerV3Meta>>;
+
+    /// Creates a ReclammState for use in balancer-maths-rust from pool_info (FlowerData)
+    fn create_reclamm_state_from_pool_info(pool_info: &FlowerData) -> ReClammV2State {
+        let base_pool_state = BasePoolState {
+            pool_address: pool_info.pool_info.address.to_string(),
+            pool_type: "RECLAMM".to_string(),
+            tokens: pool_info.pool_info.tokens.iter().map(|addr| addr.to_string()).collect(),
+            scaling_factors: pool_info.pool_info.decimal_scaling_factors.iter().map(|sf| sf.to_big_int()).collect(),
+            token_rates: pool_info.token_rates.iter().map(|rate| rate.to_big_int()).collect(),
+            balances_live_scaled_18: pool_info.balances_live_scaled_18.iter().map(|balance| balance.to_big_int()).collect(),
+            swap_fee: pool_info.swap_fee.to_big_int(),
+            aggregate_swap_fee: pool_info.aggregate_swap_fee.to_big_int(),
+            total_supply: pool_info.total_supply.to_big_int(),
+            supports_unbalanced_liquidity: pool_info.pool_info.supports_unbalanced_liquidity,
+            hook_type: None,
+        };
+
+        let reclamm_mutable = ReClammV2Mutable { 
+            last_virtual_balances: pool_info.last_virtual_balances.iter().map(|balance| balance.to_big_int()).collect(), 
+            daily_price_shift_base: pool_info.daily_price_shift_base.to_big_int(), 
+            last_timestamp: pool_info.last_timestamp.to_big_int(), 
+            centeredness_margin: pool_info.centeredness_margin.to_big_int(), 
+            start_fourth_root_price_ratio: pool_info.start_fourth_root_price_ratio.to_big_int(), 
+            end_fourth_root_price_ratio: pool_info.end_fourth_root_price_ratio.to_big_int(), 
+            price_ratio_update_start_time: pool_info.price_ratio_update_start_time.to_big_int(), 
+            price_ratio_update_end_time: pool_info.price_ratio_update_end_time.to_big_int(),
+            current_timestamp: pool_info.current_timestamp.to_big_int(),
+        };
+
+        ReClammV2State {
+            base: base_pool_state,
+            mutable: reclamm_mutable,
+            immutable: ReClammV2Immutable {
+                pool_address: pool_info.pool_info.address.to_string(),
+                tokens: pool_info.pool_info.tokens.iter().map(|addr| addr.to_string()).collect(),
+            },
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use alloy_primitives::address;
+
+        use crate::{su256const, types::balancer_v3_reclamm::{PoolInfo}};
+
+        use super::*;
+
+        fn create_test_pool() -> FlowerData {
+            FlowerData {
+                pool_info: PoolInfo {
+                    address: address!("0x12c2de9522f377b86828f6af01f58c046f814d3c"),
+                    tokens: vec![
+                        address!("0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42"),
+                        address!("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
+                    ],
+                    decimal_scaling_factors: vec![su256const!(1000000000000), su256const!(1000000000000)],
+                    supports_unbalanced_liquidity: false,
+                },
+                token_rates: vec![
+                    su256const!(1000000000000000000),
+                    su256const!(1000000000000000000),
+                ],
+                balances_live_scaled_18: vec![
+                    su256const!(3231573612000000000000),
+                    su256const!(6289473995000000000000),
+                ],
+                swap_fee: su256const!(250000000000000),
+                aggregate_swap_fee: su256const!(500000000000000000),
+                total_supply: su256const!(37431808905174667155226173),
+                last_virtual_balances: vec![
+                    su256const!(362594117476852465718411),
+                    su256const!(422163369011063269890448),
+                ],
+                daily_price_shift_base: su256const!(999999197747274347),
+                last_timestamp: su256const!(1752054083),
+                centeredness_margin: su256const!(500000000000000000),
+                start_fourth_root_price_ratio: su256const!(1011900417200324692),
+                end_fourth_root_price_ratio: su256const!(1011900417200324692),
+                price_ratio_update_start_time: su256const!(1751988959),
+                price_ratio_update_end_time: su256const!(1751988959),
+                current_timestamp: su256const!(1752054103),
+            }
+        }
+
+        #[test]
+        fn test_complete_reclamm_1() {
+            let pool = create_test_pool();
+
+            let pool_request_meta: Vec<_> = pool.to_exchanges(&mut EmptyExchangeContext {}).collect();
+            let pool_request_meta = pool_request_meta.into_iter().find(|x| x.request.source_token == address!("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913") &&
+                x.request.target_token == address!("0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42")).unwrap();
+            let result_ok = pool_request_meta.swap(su256const!(100000));
+            assert_eq!(result_ok.unwrap(), su256const!(85361));
+        }
+
+        #[test]
+        fn test_complete_reclamm_2() {
+            let pool = create_test_pool();
+
+            let pool_request_meta: Vec<_> = pool.to_exchanges(&mut EmptyExchangeContext {}).collect();
+            let pool_request_meta = pool_request_meta.into_iter().find(|x| x.request.source_token == address!("0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42") &&
+                x.request.target_token == address!("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")).unwrap();
+            let result_ok = pool_request_meta.swap(su256const!(20000000));
+            assert_eq!(result_ok.unwrap(), su256const!(23416743));
+        }
+    }
+
+}
