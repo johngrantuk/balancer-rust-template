@@ -143,3 +143,37 @@ pub mod balancer_v3_stable_surge {
         }
     }
 }
+
+pub mod balancer_v3_reclamm {
+    use crate::barter_lib::SafeU256;
+
+    use super::*;
+    use crate::{barter_lib::BlockMeta, contracts::{BalancerV3ReclammPoolContract}, types::balancer_v3_reclamm::{FlowerData, PoolInfo}};
+
+    pub async fn get_flower_data<P: Provider<N> + Clone, N: Network>(provider: P, pool: PoolInfo, block_meta: &BlockMeta) -> FlowerData {
+        let pool_contract = BalancerV3ReclammPoolContract::new(pool.address.into(), provider.clone());
+        
+        let dynamic_data = pool_contract.clone().getReClammPoolDynamicData().block(block_meta.number.into()).call().await.unwrap();
+
+        let next_block_timestamp_ms = block_meta.timestamp * 1000 + block_meta.avg_block_interval_ms;
+        let next_block_timestamp = SafeU256::from(next_block_timestamp_ms / 1000);
+
+        FlowerData {
+            pool_info: pool,
+            token_rates: dynamic_data.tokenRates.clone().into_iter().map(SafeU256::from).collect(),
+            balances_live_scaled_18: dynamic_data.balancesLiveScaled18.into_iter().map(SafeU256::from).collect(),
+            swap_fee: SafeU256::from(dynamic_data.staticSwapFeePercentage),
+            aggregate_swap_fee: pool_contract.getAggregateFeePercentages().call().await.unwrap().aggregateSwapFeePercentage.into(),
+            total_supply: SafeU256::from(dynamic_data.totalSupply),
+            last_virtual_balances: dynamic_data.lastVirtualBalances.into_iter().map(SafeU256::from).collect(),
+            daily_price_shift_base: SafeU256::from(dynamic_data.dailyPriceShiftBase),
+            last_timestamp: SafeU256::from(dynamic_data.lastTimestamp),
+            centeredness_margin: SafeU256::from(dynamic_data.centerednessMargin),
+            start_fourth_root_price_ratio: SafeU256::from(dynamic_data.startFourthRootPriceRatio),
+            end_fourth_root_price_ratio: SafeU256::from(dynamic_data.endFourthRootPriceRatio),
+            price_ratio_update_start_time: SafeU256::from(dynamic_data.priceRatioUpdateStartTime),
+            price_ratio_update_end_time: SafeU256::from(dynamic_data.priceRatioUpdateEndTime),
+            current_timestamp: next_block_timestamp
+        }
+    }
+}

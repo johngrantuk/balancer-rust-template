@@ -179,3 +179,49 @@ async fn balancer_v3_stable_surge(provider: &MultichainAlloyProvider) {
 
     println!("BalancerV3StableSurge encoded calldata: {:#?}", encoded_calldata);
 }
+
+async fn balancer_v3_reclamm(provider: &MultichainAlloyProvider) {
+    let balancers = discovery::balancer_v3_reclamm::get_all_pools(&provider).await;
+
+    // use tx https://etherscan.io/tx/0x6817c87bdbf20fadd95c637ea30036dd2f06d43c445df7b3679d0b7d535224df as reference
+    let tx_block_number = 23482065;
+    let input = su256const!(5378068135672391344);
+    let output =  su256const!(84422574814178100151897);
+    let pool = address!("0xd321300ef77067D4A868F117d37706EB81368E98");
+
+    let pool_info = balancers.iter().find(|x| x.address == pool).unwrap();
+    let block = tx_block_number - 1; // tx in block N generally happens on a blockchain state of block N-1
+
+    let block = provider.get_block_by_number(block.into()).await.unwrap().unwrap();
+            
+    let block_meta = BlockMeta {
+        hash: block.header.hash,
+        number: block.header.number,
+        timestamp: block.header.timestamp,
+        avg_block_interval_ms: 12000,
+    };
+
+    let flower_data = polling::balancer_v3_reclamm::get_flower_data(&provider, pool_info.clone(), &block_meta).await;
+    
+    let exchanges: Vec<_> = flower_data.clone().to_exchanges(&mut barter_lib::amm_lib::EmptyExchangeContext).collect();
+    println!("Generated {} exchanges for {} tokens", exchanges.len(), flower_data.pool_info.tokens.len());
+    
+    // Print all token pairs
+    for (i, exchange) in exchanges.iter().enumerate() {
+        println!("Exchange {}: {} -> {}", 
+            i, 
+            exchange.meta.source_token, 
+            exchange.meta.target_token
+        );
+    }
+
+    let exchange = exchanges.into_iter().find(|x| x.request.source_token == address!("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2") &&
+                x.request.target_token == address!("0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB")).unwrap();
+    let result = exchange.swap(input).unwrap();
+    
+    assert_eq!(result, output);
+
+    let encoded_calldata = execution::balancer_v3_reclamm::encode(input, 1.into(), &exchange.meta);
+
+    println!("BalancerV3 reCLAMM encoded calldata: {:#?}", encoded_calldata);
+}
