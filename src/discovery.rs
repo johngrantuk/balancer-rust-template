@@ -224,3 +224,41 @@ pub mod balancer_v3_reclamm {
         pools
     }
 }
+
+pub mod balancer_v3_quantamm {
+    use alloy_primitives::{address, Address};
+    use crate::barter_lib::SafeU256;
+
+    use super::*;
+    use crate::{contracts::{BalancerV3QuantammPoolContract, BalancerV3QuantammFactoryContract, BalancerV3VaultExplorerContract}, types::balancer_v3_quantamm::PoolInfo};
+
+    pub async fn get_all_pools<P: Provider<N> + Clone, N: Network>(provider: P) -> Vec<PoolInfo> {
+        const FACTORY: Address = address!("0xD5c43063563f9448cE822789651662cA7DcD5773"); // mainnet
+        const VAULT_EXPLORER: Address = address!("0xFc2986feAB34713E659da84F3B1FA32c1da95832"); // mainnet
+    
+        let factory = BalancerV3QuantammFactoryContract::new(FACTORY.into(), provider.clone());
+        let pools = factory.getPools().call().await.unwrap();
+        // Vault Explorer is a helper contract that provides information about pools
+        let vault_explorer = BalancerV3VaultExplorerContract::new(VAULT_EXPLORER.into(), provider.clone());
+        let futures = pools.into_iter().map(|x| {
+            let provider = provider.clone();
+            let vault_explorer = vault_explorer.clone();
+            async move {
+                let pool_contract = BalancerV3QuantammPoolContract::new(x.into(), provider);
+                let immutable_data = pool_contract.getQuantAMMWeightedPoolImmutableData().call().await.unwrap();
+                
+                PoolInfo {
+                    address: x,
+                    tokens: immutable_data.tokens,
+                    decimal_scaling_factors: vault_explorer.getPoolTokenRates(x.into()).call().await.unwrap().decimalScalingFactors.into_iter().map(SafeU256::from).collect(),
+                    supports_unbalanced_liquidity: false,
+                    max_trade_size_ratio: immutable_data.maxTradeSizeRatio.into(),
+                }
+            }
+        });
+
+        let mut pools = futures::future::join_all(futures).await;
+        pools.sort_by_key(|x| x.address);
+        pools
+    }
+}
