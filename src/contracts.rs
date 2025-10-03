@@ -44,3 +44,6 @@ declare_sol_contract!(BALANCER_V3_STABLE_SURGE_HOOK);
 declare_sol_contract!(BALANCER_V3_ROUTER);
 declare_sol_contract!(BALANCER_V3_RECLAMM_FACTORY);
 declare_sol_contract!(BALANCER_V3_RECLAMM_POOL);
+declare_sol_contract!(BALANCER_V3_QUANTAMM_POOL);
+declare_sol_contract!(BALANCER_V3_VAULT_EXPLORER);
+declare_sol_contract!(BALANCER_V3_QUANTAMM_FACTORY);
