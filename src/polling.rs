@@ -177,3 +177,33 @@ pub mod balancer_v3_reclamm {
         }
     }
 }
+
+pub mod balancer_v3_quantamm {
+    use crate::barter_lib::SafeU256;
+    
+    use super::*;
+    use crate::{barter_lib::BlockMeta, contracts::{BalancerV3QuantammPoolContract}, types::balancer_v3_quantamm::{FlowerData, PoolInfo}};
+
+    pub async fn get_flower_data<P: Provider<N> + Clone, N: Network>(provider: P, pool: PoolInfo, block_meta: &BlockMeta) -> FlowerData {
+        let pool_contract = BalancerV3QuantammPoolContract::new(pool.address.into(), provider.clone());
+        
+        let dynamic_data = pool_contract.clone().getQuantAMMWeightedPoolDynamicData().block(block_meta.number.into()).call().await.unwrap();
+
+        let next_block_timestamp_ms = block_meta.timestamp * 1000 + block_meta.avg_block_interval_ms;
+        let next_block_timestamp = SafeU256::from(next_block_timestamp_ms / 1000);
+
+        FlowerData {
+            pool_info: pool,
+            token_rates: dynamic_data.tokenRates.clone().into_iter().map(SafeU256::from).collect(),
+            balances_live_scaled_18: dynamic_data.balancesLiveScaled18.into_iter().map(SafeU256::from).collect(),
+            swap_fee: pool_contract.getStaticSwapFeePercentage().call().await.unwrap().into(),
+            aggregate_swap_fee: pool_contract.getAggregateFeePercentages().call().await.unwrap().aggregateSwapFeePercentage.into(),
+            total_supply: SafeU256::from(dynamic_data.totalSupply),
+            first_four_weights_and_multipliers: dynamic_data.firstFourWeightsAndMultipliers.clone(),
+            second_four_weights_and_multipliers: dynamic_data.secondFourWeightsAndMultipliers.clone(),
+            last_update_time: SafeU256::from(dynamic_data.lastUpdateTime.to::<u128>()),
+            last_interop_time: SafeU256::from(dynamic_data.lastInteropTime.to::<u128>()),
+            current_timestamp: next_block_timestamp
+        }
+    }
+}
