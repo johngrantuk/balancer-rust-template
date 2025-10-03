@@ -264,3 +264,37 @@ pub mod balancer_v3_reclamm {
         pub price_ratio_update_end_time: SafeU256,
     }
 }
+
+pub mod balancer_v3_quantamm {
+    use alloy_primitives::{Address, I256};
+
+    use super::*;
+
+    #[serde_as]
+    #[derive(Debug, Deserialize, Serialize, Clone, Eq, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct PoolInfo {
+        pub address: Address,
+        pub tokens: Vec<Address>,  // Multi-token support
+        pub decimal_scaling_factors: Vec<SafeU256>,
+        pub supports_unbalanced_liquidity: bool,
+        pub max_trade_size_ratio: SafeU256
+    }
+
+    #[serde_as]
+    #[derive(Debug, Deserialize, Serialize, Clone, Eq, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct FlowerData {
+        pub pool_info: PoolInfo,
+        pub token_rates: Vec<SafeU256>,
+        pub balances_live_scaled_18: Vec<SafeU256>,
+        pub swap_fee: SafeU256,
+        pub aggregate_swap_fee: SafeU256,
+        pub total_supply: SafeU256,
+        pub first_four_weights_and_multipliers: Vec<I256>,
+        pub second_four_weights_and_multipliers: Vec<I256>,
+        pub last_update_time: SafeU256,
+        pub last_interop_time: SafeU256,
+        pub current_timestamp: SafeU256,
+    }
+}

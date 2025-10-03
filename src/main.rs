@@ -59,6 +59,8 @@ async fn main() {
     dodo_v1(&provider).await;
     fluid_dex_lite(&provider).await;
     balancer_v3_stable_surge(&provider).await;
+    balancer_v3_reclamm(&provider).await;
+    balancer_v3_quantamm(&provider).await;
 }
 
 async fn dodo_v1(provider: &MultichainAlloyProvider) {
@@ -222,6 +224,52 @@ async fn balancer_v3_reclamm(provider: &MultichainAlloyProvider) {
     assert_eq!(result, output);
 
     let encoded_calldata = execution::balancer_v3_reclamm::encode(input, 1.into(), &exchange.meta);
+
+    println!("BalancerV3 reCLAMM encoded calldata: {:#?}", encoded_calldata);
+}
+
+async fn balancer_v3_quantamm(provider: &MultichainAlloyProvider) {
+    let balancers = discovery::balancer_v3_quantamm::get_all_pools(&provider).await;
+
+    // use tx https://etherscan.io/tx/0xe9db7db466608ba67820b80cb037de14b94f9d39979ec96ac9da203df1d84d50#eventlog as reference
+    let tx_block_number = 23486527;
+    let input = su256const!(24498150000000000);
+    let output =  su256const!(94754960);
+    let pool = address!("0x6b61d8680c4f9e560c8306807908553f95c749c5");
+
+    let pool_info = balancers.iter().find(|x| x.address == pool).unwrap();
+    let block = tx_block_number - 1; // tx in block N generally happens on a blockchain state of block N-1
+
+    let block = provider.get_block_by_number(block.into()).await.unwrap().unwrap();
+            
+    let block_meta = BlockMeta {
+        hash: block.header.hash,
+        number: block.header.number,
+        timestamp: block.header.timestamp,
+        avg_block_interval_ms: 12000,
+    };
+
+    let flower_data = polling::balancer_v3_quantamm::get_flower_data(&provider, pool_info.clone(), &block_meta).await;
+    
+    let exchanges: Vec<_> = flower_data.clone().to_exchanges(&mut barter_lib::amm_lib::EmptyExchangeContext).collect();
+    println!("Generated {} exchanges for {} tokens", exchanges.len(), flower_data.pool_info.tokens.len());
+    
+    // Print all token pairs
+    for (i, exchange) in exchanges.iter().enumerate() {
+        println!("Exchange {}: {} -> {}", 
+            i, 
+            exchange.meta.source_token, 
+            exchange.meta.target_token
+        );
+    }
+
+    let exchange = exchanges.into_iter().find(|x| x.request.source_token == address!("0x45804880De22913dAFE09f4980848ECE6EcbAf78") &&
+                x.request.target_token == address!("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48")).unwrap();
+    let result = exchange.swap(input).unwrap();
+    
+    assert_eq!(result, output);
+
+    let encoded_calldata = execution::balancer_v3_quantamm::encode(input, 1.into(), &exchange.meta);
 
     println!("BalancerV3 reCLAMM encoded calldata: {:#?}", encoded_calldata);
 }
