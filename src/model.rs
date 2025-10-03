@@ -1925,3 +1925,266 @@ pub mod balancer_v3_reclamm {
     }
 
 }
+
+pub mod balancer_v3_quantamm {
+    use std::sync::Arc;
+    use crate::barter_lib::amm_lib::*;
+
+    use crate::barter_lib::common::Swap;
+    use crate::{
+        barter_lib::{amm_lib::ExchangeInfo, safe_math::{MathResult, SafeMathError}, SafeU256}, types::balancer_v3_quantamm::FlowerData
+    };
+    use balancer_maths_rust::pools::QuantAmmMutable;
+    use balancer_maths_rust::vault::Vault; 
+    use balancer_maths_rust::common::types::{SwapInput, SwapKind, PoolStateOrBuffer};
+    use balancer_maths_rust::pools::quantamm::{QuantAmmState, QuantAmmImmutable};
+    use balancer_maths_rust::common::types::BasePoolState;
+
+    pub type BalancerV3QuantammError = SafeMathError;
+    #[derive(Debug, Clone)]
+    pub struct BalancerV3ExchangeRequest {
+        pub source_token: Address,
+        pub target_token: Address,
+        pub exchange_info: ExchangeInfo,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize, Hash, Eq, PartialEq, Clone)]
+    #[serde(rename_all = "camelCase")]
+    #[serde(deny_unknown_fields)]
+    pub struct BalancerV3Meta {
+        pub pool_address: Address,
+        pub source_token: Address,
+        pub target_token: Address,
+    }
+
+    #[allow(unused)]
+    impl GetAddress for BalancerV3Meta {
+        fn get_address(&self) -> Address {
+            self.pool_address
+        }
+    }
+    #[allow(unused)]
+    impl ToExchanges for FlowerData {
+        type Ex = BalancerV3QuantammExchange;
+        type ExIter<'a, T: ExchangeContext + 'a> =
+            impl Iterator<Item = Self::Ex> + 'a;
+
+        fn to_exchanges<
+            'a,
+            T: ExchangeContext + 'a,
+        >(
+            self,
+            context: &'a mut T,
+        ) -> Self::ExIter<'a, T> {
+            let pool_address = self.pool_info.address;
+            let tokens = self.pool_info.tokens.clone();
+            let p = Arc::new(self);
+            
+            // Generate exchanges for all token pairs
+            let mut exchanges = Vec::new();
+            for (i, &token_a) in tokens.iter().enumerate() {
+                for (j, &token_b) in tokens.iter().enumerate() {
+                    // Skip same token pairs
+                    if i == j {
+                        continue;
+                    }
+                    
+                    // Get token IDs, skip if any token is not found
+                    if let (Some(source_id), Some(target_id)) = (
+                        context.get_token_id(&token_a),
+                        context.get_token_id(&token_b)
+                    ) {
+                        exchanges.push(BalancerV3QuantammExchange {
+                            pool_info: Arc::clone(&p),
+                            request: BalancerV3ExchangeRequest {
+                                source_token: token_a,
+                                target_token: token_b,
+                                exchange_info: ExchangeInfo {
+                                    exchange_id: context.get_exchange_id(&p.pool_info.address),
+                                    source: source_id,
+                                    target: target_id,
+                                },
+                            },
+                            meta: Arc::new(BalancerV3Meta {
+                                pool_address,
+                                source_token: token_a,
+                                target_token: token_b,
+                            }),
+                        });
+                    }
+                }
+            }
+
+            exchanges.into_iter()
+        }
+    }
+    
+    #[allow(unused)]
+    impl Swap for BalancerV3QuantammExchange {
+        type Error = BalancerV3QuantammError;
+
+        #[inline(never)]
+        fn swap(&self, amount: SafeU256) -> MathResult<SafeU256, Self::Error> {
+            let vault = Vault::new();
+
+            let swap_input = SwapInput {
+                swap_kind: SwapKind::GivenIn,
+                amount_raw: amount.to_big_int(),
+                token_in: self.request.source_token.to_string(),
+                token_out: self.request.target_token.to_string(),
+            };
+
+            let pool_state = create_quantamm_state_from_pool_info(&self.pool_info);
+
+            let output_amount = vault.swap(
+                &swap_input,
+                &PoolStateOrBuffer::Pool(Box::new(pool_state.into())),
+                None,
+            );
+
+            match output_amount {
+                Ok(big_int) => {
+                    let result = SafeU256::from_dec_str(&big_int.to_string()).unwrap_or(SafeU256::zero());
+                    MathResult::ok(result)
+                },
+                Err(_) => MathResult::err(SafeMathError::Div),
+            }
+        }
+    }
+
+    #[allow(unused)]
+    impl SwapGas for BalancerV3QuantammExchange {
+        type Methods = ();
+        fn swap_gas(&self, gas_storage: &impl GasStorage<Self::Methods>) -> Gas {
+            // https://etherscan.io/tx/0x7ea370c34fc1338c4839eab5592c77d824da086dd66827664fc8f0da55000977
+            return 196000;
+        }
+    }
+
+    /// =========== IMPLEMENTATION DETAILS BELOW ==============
+
+    pub type BalancerV3QuantammExchange = PoolRequestMeta<Arc<FlowerData>, BalancerV3ExchangeRequest, Arc<BalancerV3Meta>>;
+
+    /// Converts I256 to BigInt preserving sign
+    fn convert_i256_to_bigint(value: &alloy_primitives::Signed<256, 4>) -> num_bigint::BigInt {
+        let raw = value.into_raw();
+        let bytes = raw.to_be_bytes::<32>();
+        num_bigint::BigInt::from_signed_bytes_be(&bytes)
+    }
+
+    /// Creates a QuantAmmState for use in balancer-maths-rust from pool_info (FlowerData)
+    fn create_quantamm_state_from_pool_info(pool_info: &FlowerData) -> QuantAmmState {
+        let base_pool_state = BasePoolState {
+            pool_address: pool_info.pool_info.address.to_string(),
+            pool_type: "QUANT_AMM_WEIGHTED".to_string(),
+            tokens: pool_info.pool_info.tokens.iter().map(|addr| addr.to_string()).collect(),
+            scaling_factors: pool_info.pool_info.decimal_scaling_factors.iter().map(|sf| sf.to_big_int()).collect(),
+            token_rates: pool_info.token_rates.iter().map(|rate| rate.to_big_int()).collect(),
+            balances_live_scaled_18: pool_info.balances_live_scaled_18.iter().map(|balance| balance.to_big_int()).collect(),
+            swap_fee: pool_info.swap_fee.to_big_int(),
+            aggregate_swap_fee: pool_info.aggregate_swap_fee.to_big_int(),
+            total_supply: pool_info.total_supply.to_big_int(),
+            supports_unbalanced_liquidity: pool_info.pool_info.supports_unbalanced_liquidity,
+            hook_type: None,
+        };
+
+        let quantamm_mutable = QuantAmmMutable { 
+            first_four_weights_and_multipliers: pool_info.first_four_weights_and_multipliers.iter().map(convert_i256_to_bigint).collect(),
+            second_four_weights_and_multipliers: pool_info.second_four_weights_and_multipliers.iter().map(convert_i256_to_bigint).collect(),
+            last_update_time: pool_info.last_update_time.to_big_int(),
+            last_interop_time: pool_info.last_interop_time.to_big_int(),
+            current_timestamp: pool_info.current_timestamp.to_big_int(),
+        };
+
+        QuantAmmState {
+            base: base_pool_state,
+            mutable: quantamm_mutable,
+            immutable: QuantAmmImmutable {
+                max_trade_size_ratio: pool_info.pool_info.max_trade_size_ratio.to_big_int()
+            },
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use alloy_primitives::{address, I256};
+
+        use crate::{su256const, types::balancer_v3_quantamm::{PoolInfo}};
+
+        use super::*;
+
+        fn create_test_pool() -> FlowerData {
+            FlowerData {
+                pool_info: PoolInfo {
+                    address: address!("0x6b61d8680c4f9e560c8306807908553f95c749c5"),
+                    tokens: vec![
+                        address!("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"),
+                        address!("0x45804880de22913dafe09f4980848ece6ecbaf78"),
+                        address!("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+                    ],
+                    decimal_scaling_factors: vec![su256const!(10000000000), su256const!(1), su256const!(1000000000000)],
+                    supports_unbalanced_liquidity: false,
+                    max_trade_size_ratio: su256const!(100000000000000000),
+                },
+                token_rates: vec![
+                    su256const!(1000000000000000000),
+                    su256const!(1000000000000000000),
+                    su256const!(1000000000000000000),
+                ],
+                balances_live_scaled_18: vec![
+                    su256const!(900794470000000000),
+                    su256const!(1304051331499334098),
+                    su256const!(41955655751000000000000),
+                ],
+                swap_fee: su256const!(20000000000000000),
+                aggregate_swap_fee: su256const!(0),
+                total_supply: su256const!(8935547542387177179),
+                first_four_weights_and_multipliers: vec![
+                    I256::try_from(670600731000000000i64).unwrap(), 
+                    I256::try_from(30079278000000000i64).unwrap(), 
+                    I256::try_from(299405491000000000i64).unwrap(), 
+                    I256::try_from(129000000000i64).unwrap(), 
+                    I256::try_from(0).unwrap(), 
+                    I256::try_from(-129000000000i64).unwrap(), 
+                    I256::try_from(0).unwrap(), 
+                    I256::try_from(0).unwrap()
+                    ],
+                second_four_weights_and_multipliers: vec![
+                    I256::try_from(0).unwrap(), 
+                    I256::try_from(0).unwrap(), 
+                    I256::try_from(0).unwrap(), 
+                    I256::try_from(0).unwrap(), 
+                    I256::try_from(0).unwrap(), 
+                    I256::try_from(0).unwrap(), 
+                    I256::try_from(0).unwrap()
+                ],
+                last_update_time: su256const!(1747699223),
+                last_interop_time: su256const!(1747785323),
+                current_timestamp: su256const!(1747745435),
+            }
+        }
+
+        #[test]
+        fn test_complete_quantamm_1() {
+            let pool = create_test_pool();
+
+            let pool_request_meta: Vec<_> = pool.to_exchanges(&mut EmptyExchangeContext {}).collect();
+            let pool_request_meta = pool_request_meta.into_iter().find(|x| x.request.source_token == address!("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599") &&
+                x.request.target_token == address!("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")).unwrap();
+            let result_ok = pool_request_meta.swap(su256const!(1000000));
+            assert_eq!(result_ok.unwrap(), su256const!(1033749354));
+        }
+
+        #[test]
+        fn test_complete_quantamm_2() {
+            let pool = create_test_pool();
+
+            let pool_request_meta: Vec<_> = pool.to_exchanges(&mut EmptyExchangeContext {}).collect();
+            let pool_request_meta = pool_request_meta.into_iter().find(|x| x.request.source_token == address!("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48") &&
+                x.request.target_token == address!("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599")).unwrap();
+            let result_ok = pool_request_meta.swap(su256const!(10000000));
+            assert_eq!(result_ok.unwrap(), su256const!(9124));
+        }
+    }
+
+}
