@@ -1432,18 +1432,19 @@ pub mod balancer_v3_stable_surge {
         barter_lib::{amm_lib::ExchangeInfo, safe_math::{MathResult, SafeMathError}, SafeU256}, types::balancer_v3_stable_surge::FlowerData
     };
     use balancer_maths_rust::vault::Vault; 
-    use balancer_maths_rust::common::types::{SwapInput, SwapKind, PoolStateOrBuffer};
+    use balancer_maths_rust::common::types::PoolStateOrBuffer;
     use balancer_maths_rust::pools::stable::{StableState, StableMutable};
     use balancer_maths_rust::common::types::BasePoolState;
     use balancer_maths_rust::hooks::stable_surge::StableSurgeHookState;
     use balancer_maths_rust::hooks::types::HookState;
+    use crate::balancer_lib::{SwapPath, SwapPathError, execute_swap_with_path, create_swap_path_for_tokens, create_token_type_mapping};
 
-    pub type BalancerV3StableSurgeError = SafeMathError;
     #[derive(Debug, Clone)]
     pub struct BalancerV3ExchangeRequest {
         pub source_token: Address,
         pub target_token: Address,
         pub exchange_info: ExchangeInfo,
+        pub swap_path: Option<SwapPath>,
     }
 
     #[derive(Debug, serde::Serialize, serde::Deserialize, Hash, Eq, PartialEq, Clone)]
@@ -1453,6 +1454,7 @@ pub mod balancer_v3_stable_surge {
         pub pool_address: Address,
         pub source_token: Address,
         pub target_token: Address,
+        pub swap_path: Option<SwapPath>,
     }
 
     #[allow(unused)]
@@ -1478,35 +1480,58 @@ pub mod balancer_v3_stable_surge {
             let tokens = self.pool_info.tokens.clone();
             let p = Arc::new(self);
             
-            // Generate exchanges for all token pairs
+            // Create a mapping from address to token type using balancer_lib helper
+            use crate::balancer_lib::{TokenType, SwapTokenType};
+            let address_to_token_type = create_token_type_mapping(&tokens);
+            
+            // Expand each token to include its asset if it's ERC4626
+            let expanded_tokens: Vec<Address> = tokens.iter()
+                .flat_map(|token| {
+                    let mut addrs = vec![token.address()];
+                    if let Some(asset) = token.asset() {
+                        addrs.push(asset);
+                    }
+                    addrs
+                })
+                .collect();
+            
+            // Generate exchanges for all unique pairs
             let mut exchanges = Vec::new();
-            for (i, &token_a) in tokens.iter().enumerate() {
-                for (j, &token_b) in tokens.iter().enumerate() {
-                    // Skip same token pairs
+            for (i, &source_token) in expanded_tokens.iter().enumerate() {
+                for (j, &target_token) in expanded_tokens.iter().enumerate() {
                     if i == j {
                         continue;
                     }
                     
-                    // Get token IDs, skip if any token is not found
                     if let (Some(source_id), Some(target_id)) = (
-                        context.get_token_id(&token_a),
-                        context.get_token_id(&token_b)
+                        context.get_token_id(&source_token),
+                        context.get_token_id(&target_token)
                     ) {
+                        // Create swap path based on token types
+                        let swap_path = create_swap_path_for_tokens(
+                            pool_address,
+                            source_token,
+                            target_token,
+                            &address_to_token_type,
+                        );
+                        
                         exchanges.push(BalancerV3StableSurgeExchange {
                             pool_info: Arc::clone(&p),
                             request: BalancerV3ExchangeRequest {
-                                source_token: token_a,
-                                target_token: token_b,
+                                source_token,
+                                target_token,
                                 exchange_info: ExchangeInfo {
                                     exchange_id: context.get_exchange_id(&p.pool_info.address),
                                     source: source_id,
                                     target: target_id,
                                 },
+                                swap_path: swap_path.clone(),
                             },
                             meta: Arc::new(BalancerV3Meta {
                                 pool_address,
-                                source_token: token_a,
-                                target_token: token_b,
+                                source_token,
+                                target_token,
+                                swap_path,
                             }),
                         });
                     }
@@ -1519,35 +1544,27 @@ pub mod balancer_v3_stable_surge {
     
     #[allow(unused)]
     impl Swap for BalancerV3StableSurgeExchange {
-        type Error = BalancerV3StableSurgeError;
+        type Error = SwapPathError;
 
         #[inline(never)]
         fn swap(&self, amount: SafeU256) -> MathResult<SafeU256, Self::Error> {
             let vault = Vault::new();
 
-            let swap_input = SwapInput {
-                swap_kind: SwapKind::GivenIn,
-                amount_raw: amount.to_big_int(),
-                token_in: self.request.source_token.to_string(),
-                token_out: self.request.target_token.to_string(),
-            };
+            let pool_state = &PoolStateOrBuffer::Pool(Box::new(create_stable_state_from_pool_info(&self.pool_info).into()));
+            let hook_state = Some(&HookState::StableSurge(create_hook_state(&self.pool_info)));
 
-            let pool_state = create_stable_state_from_pool_info(&self.pool_info);
-            let hook_state = create_hook_state(&self.pool_info);
+            let result = execute_swap_with_path(
+                self.request.swap_path.as_ref(),
+                amount,
+                self.request.source_token.to_string(),
+                self.request.target_token.to_string(),
+                &self.pool_info.buffer_states,
+                pool_state,
+                hook_state,
+                &vault,
+            )?;
 
-            let output_amount = vault.swap(
-                &swap_input,
-                &PoolStateOrBuffer::Pool(Box::new(pool_state.into())),
-                Some(&HookState::StableSurge(hook_state)),
-            );
-
-            match output_amount {
-                Ok(big_int) => {
-                    let result = SafeU256::from_dec_str(&big_int.to_string()).unwrap_or(SafeU256::zero());
-                    MathResult::ok(result)
-                },
-                Err(_) => MathResult::err(SafeMathError::Div),
-            }
+            MathResult::ok(result)
         }
     }
 
@@ -1569,7 +1586,7 @@ pub mod balancer_v3_stable_surge {
         let base_pool_state = BasePoolState {
             pool_address: pool_info.pool_info.address.to_string(),
             pool_type: "STABLE".to_string(),
-            tokens: pool_info.pool_info.tokens.iter().map(|addr| addr.to_string()).collect(),
+            tokens: pool_info.pool_info.tokens.iter().map(|token| token.address().to_string()).collect(),
             scaling_factors: pool_info.pool_info.decimal_scaling_factors.iter().map(|sf| sf.to_big_int()).collect(),
             token_rates: pool_info.token_rates.iter().map(|rate| rate.to_big_int()).collect(),
             balances_live_scaled_18: pool_info.balances_live_scaled_18.iter().map(|balance| balance.to_big_int()).collect(),
@@ -1602,9 +1619,11 @@ pub mod balancer_v3_stable_surge {
 
     #[cfg(test)]
     mod tests {
+        use std::collections::HashMap;
         use alloy_primitives::address;
 
         use crate::{su256const, types::balancer_v3_stable_surge::{PoolInfo}};
+        use crate::balancer_lib::TokenType;
 
         use super::*;
 
@@ -1613,8 +1632,8 @@ pub mod balancer_v3_stable_surge {
                 pool_info: PoolInfo {
                     address: address!("0x75c23271661d9d143dcb617222bc4bec783eff34"),
                     tokens: vec![
-                        address!("0x7b79995e5f793a07bc00c21412e50ecae098e7f9"),
-                        address!("0xb19382073c7a0addbb56ac6af1808fa49e377b75"),
+                        TokenType::Regular(address!("0x7b79995e5f793a07bc00c21412e50ecae098e7f9")),
+                        TokenType::Regular(address!("0xb19382073c7a0addbb56ac6af1808fa49e377b75")),
                     ],
                     decimal_scaling_factors: vec![su256const!(1), su256const!(1)],
                     supports_unbalanced_liquidity: false,
@@ -1634,6 +1653,7 @@ pub mod balancer_v3_stable_surge {
                 amp: su256const!(1000000),
                 max_surge_fee_percentage: su256const!(950000000000000000),
                 surge_threshold_percentage: su256const!(300000000000000000),
+                buffer_states: HashMap::new(),
             }
         }
 
