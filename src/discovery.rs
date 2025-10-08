@@ -163,22 +163,26 @@ pub mod balancer_v3_stable_surge {
     use crate::barter_lib::SafeU256;
 
     use super::*;
-    use crate::{contracts::{BalancerV3StablePoolContract, BalancerV3StableSurgeFactoryContract}, types::balancer_v3_stable_surge::PoolInfo};
+    use crate::{contracts::{BalancerV3StablePoolContract, BalancerV3StableSurgeFactoryContract}, types::balancer_v3_stable_surge::PoolInfo, balancer_lib::{fetch_erc4626_tokens, classify_tokens}};
 
     pub async fn get_all_pools<P: Provider<N> + Clone, N: Network>(provider: P) -> Vec<PoolInfo> {
+        // Fetch ERC4626 tokens at the start
+        let erc4626_tokens = fetch_erc4626_tokens().await.unwrap();
+        
         const FACTORY: Address = address!("0x355bD33F0033066BB3DE396a6d069be57353AD95"); // mainnet
     
         let factory = BalancerV3StableSurgeFactoryContract::new(FACTORY.into(), provider.clone());
         let pools = factory.getPools().call().await.unwrap();
         let futures = pools.into_iter().map(|x| {
             let provider = provider.clone();
+            let erc4626_tokens = erc4626_tokens.clone();
             async move {
                 let pool_contract = BalancerV3StablePoolContract::new(x.into(), provider);
                 let immutable_data = pool_contract.getStablePoolImmutableData().call().await.unwrap();
-                
+
                 PoolInfo {
                     address: x,
-                    tokens: immutable_data.tokens,
+                    tokens: classify_tokens(immutable_data.tokens.clone(), &erc4626_tokens),
                     decimal_scaling_factors: immutable_data.decimalScalingFactors.into_iter().map(SafeU256::from).collect(),
                     supports_unbalanced_liquidity: false,
                     hook_type: "StableSurge".to_string(),
