@@ -121,15 +121,20 @@ pub mod balancer_v3_stable_surge {
 
     use super::*;
     use crate::{barter_lib::BlockMeta, contracts::{BalancerV3StablePoolContract, BalancerV3StableSurgeHookContract}, types::balancer_v3_stable_surge::{FlowerData, PoolInfo}};
+    use crate::balancer_lib::{fetch_erc4626_buffer_states, VAULT};
 
     pub async fn get_flower_data<P: Provider<N> + Clone, N: Network>(provider: P, pool: PoolInfo, block_meta: &BlockMeta) -> FlowerData {
         let pool_contract = BalancerV3StablePoolContract::new(pool.address.into(), provider.clone());
         const STABLE_SURGE_HOOK: Address = address!("0xBDbADc891BB95DEE80eBC491699228EF0f7D6fF1"); // mainnet
-        let stable_surge_hook_contract = BalancerV3StableSurgeHookContract::new(STABLE_SURGE_HOOK.into(), provider);
+        let stable_surge_hook_contract = BalancerV3StableSurgeHookContract::new(STABLE_SURGE_HOOK.into(), provider.clone());
 
         let dynamic_data = pool_contract.clone().getStablePoolDynamicData().block(block_meta.number.into()).call().await.unwrap();
 
         let pool_address = pool.address;
+        
+        // Fetch ERC4626 buffer states using the reusable function
+        let buffer_states = fetch_erc4626_buffer_states(provider.clone(), &pool.tokens, VAULT).await;
+        
         FlowerData {
             pool_info: pool,
             token_rates: dynamic_data.tokenRates.clone().into_iter().map(SafeU256::from).collect(),
@@ -140,6 +145,7 @@ pub mod balancer_v3_stable_surge {
             amp: SafeU256::from(dynamic_data.amplificationParameter),
             max_surge_fee_percentage: stable_surge_hook_contract.getMaxSurgeFeePercentage(pool_address).call().await.unwrap().into(),
             surge_threshold_percentage: stable_surge_hook_contract.getSurgeThresholdPercentage(pool_address).call().await.unwrap().into(),
+            buffer_states,
         }
     }
 }
