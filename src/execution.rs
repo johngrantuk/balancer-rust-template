@@ -84,7 +84,8 @@ pub mod fluid_dex_lite {
 
 pub mod balancer_v3_stable_surge {
 
-    use crate::contracts::BALANCER_V3_ROUTER;
+    use crate::contracts::{BALANCER_V3_ROUTER, BALANCER_V3_BATCH_ROUTER};
+    use crate::contracts::balancer_v3_batch_router_mod::IBatchRouter;
     use alloy_primitives::{address};
 
     use super::*;
@@ -94,22 +95,54 @@ pub mod balancer_v3_stable_surge {
         min_amount_out: SafeU256,
         meta: &crate::model::balancer_v3_stable_surge::BalancerV3Meta
     ) -> EncodeResult{
-        let calldata = BALANCER_V3_ROUTER.swapSingleTokenExactIn(
-            meta.pool_address.into(),
-            meta.source_token.into(),
-            meta.target_token.into(),
-            amount_in.into(),
-            min_amount_out.into(),
-            Default::default(),
-            false,
-            "0x".into()
-        ).calldata().clone();
+        if let Some(path) = meta.swap_path.as_ref() {
+            // Convert SwapPath steps to the BatchRouter format
+            let steps = path.steps.iter().map(|step| {
+                IBatchRouter::SwapPathStep {
+                    pool: step.pool,
+                    tokenOut: step.token_out,
+                    isBuffer: step.is_buffer,
+                }
+            }).collect::<Vec<_>>();
+            
+            // Construct the full SwapPathExactAmountIn with amounts
+            let swap_path_with_amounts = IBatchRouter::SwapPathExactAmountIn {
+                tokenIn: path.token_in,
+                steps,
+                exactAmountIn: amount_in.into(),
+                minAmountOut: min_amount_out.into(),
+            };
+            
+            let calldata = BALANCER_V3_BATCH_ROUTER.swapExactIn(
+                vec![swap_path_with_amounts],
+                Default::default(),
+                false,
+                "0x".into()                
+            ).calldata().clone();
 
-        return EncodeResult {
-            calldata,
-            target: address!("0xAE563E3f8219521950555F5962419C8919758Ea2"),
-            source_interaction: SourceInteraction::Approve // Note - Permit2 is used for approvals
-        };
+            return EncodeResult {
+                calldata,
+                target: address!("0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1"),
+                source_interaction: SourceInteraction::Approve // Note - Permit2 is used for approvals
+            };
+        } else {
+            let calldata = BALANCER_V3_ROUTER.swapSingleTokenExactIn(
+                meta.pool_address.into(),
+                meta.source_token.into(),
+                meta.target_token.into(),
+                amount_in.into(),
+                min_amount_out.into(),
+                Default::default(),
+                false,
+                "0x".into()
+            ).calldata().clone();
+
+            return EncodeResult {
+                calldata,
+                target: address!("0xAE563E3f8219521950555F5962419C8919758Ea2"),
+                source_interaction: SourceInteraction::Approve // Note - Permit2 is used for approvals
+            };
+        }
     }
 }
 

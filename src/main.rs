@@ -35,6 +35,7 @@ mod discovery;
 mod polling;
 mod execution;
 mod contracts;
+mod balancer_lib;
 
 pub type MultichainAlloyProvider = FillProvider<JoinFill<alloy::providers::Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>, RootProvider<AnyNetwork>, AnyNetwork>;
 
@@ -59,6 +60,7 @@ async fn main() {
     dodo_v1(&provider).await;
     fluid_dex_lite(&provider).await;
     balancer_v3_stable_surge(&provider).await;
+    balancer_v3_boosted_stable_surge(&provider).await;
     balancer_v3_reclamm(&provider).await;
     balancer_v3_quantamm(&provider).await;
 }
@@ -180,6 +182,60 @@ async fn balancer_v3_stable_surge(provider: &MultichainAlloyProvider) {
     let encoded_calldata = execution::balancer_v3_stable_surge::encode(input, 1.into(), &exchange.meta);
 
     println!("BalancerV3StableSurge encoded calldata: {:#?}", encoded_calldata);
+}
+
+async fn balancer_v3_boosted_stable_surge(provider: &MultichainAlloyProvider) {
+    let balancers = discovery::balancer_v3_stable_surge::get_all_pools(&provider).await;
+    
+    // just using as a test example
+    let tx_block_number = 23532071;
+    let input = su256const!(3000000000000000000000);
+    let pool = address!("0x6c5972311191097d002e804a9bf97c96c54059ed");
+
+    let pool_info = balancers.iter().find(|x| x.address == pool).unwrap();
+    let block = tx_block_number - 1; // tx in block N generally happens on a blockchain state of block N-1
+
+    let block = provider.get_block_by_number(block.into()).await.unwrap().unwrap();
+            
+    let block_meta = BlockMeta {
+        hash: block.header.hash,
+        number: block.header.number,
+        timestamp: block.header.timestamp,
+        avg_block_interval_ms: 12000,
+    };
+
+    let flower_data = polling::balancer_v3_stable_surge::get_flower_data(&provider, pool_info.clone(), &block_meta).await;
+
+    let exchanges: Vec<_> = flower_data.clone().to_exchanges(&mut barter_lib::amm_lib::EmptyExchangeContext).collect();
+    println!("Generated {} exchanges for {} tokens", exchanges.len(), flower_data.pool_info.tokens.len());
+    
+    // // Wrap
+    let exchange = exchanges.clone().into_iter().find(|x| x.request.source_token == address!("0x40d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f") &&
+                x.request.target_token == address!("0xc71ea051a5f82c67adcf634c36ffe6334793d24c")).unwrap();
+    let result = exchange.swap(input).unwrap();
+    println!("Result: {}", result);
+
+    // Unwrap
+    let exchange = exchanges.clone().into_iter().find(|x| x.request.source_token == address!("0xc71ea051a5f82c67adcf634c36ffe6334793d24c") &&
+                x.request.target_token == address!("0x40d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f")).unwrap();
+    let result = exchange.swap(input).unwrap();
+    println!("Result: {}", result);
+
+    // // Wrap > Swap
+    let exchange = exchanges.clone().into_iter().find(|x| x.request.source_token == address!("0x40d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f") &&
+                x.request.target_token == address!("0xfa2b947eec368f42195f24f36d2af29f7c24cec2")).unwrap();
+    let result = exchange.swap(input).unwrap();
+    println!("Result: {}", result);
+
+    // // Swap > Unwrap
+    let exchange = exchanges.into_iter().find(|x| x.request.source_token == address!("0xfa2b947eec368f42195f24f36d2af29f7c24cec2") &&
+                x.request.target_token == address!("0x40d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f")).unwrap();
+    let result = exchange.swap(input).unwrap();
+    println!("Result: {}", result);
+    
+    let encoded_calldata = execution::balancer_v3_stable_surge::encode(input, 1.into(), &exchange.meta);
+
+    println!("BalancerV3StableSurge Boosted encoded calldata: {:#?}", encoded_calldata);
 }
 
 async fn balancer_v3_reclamm(provider: &MultichainAlloyProvider) {

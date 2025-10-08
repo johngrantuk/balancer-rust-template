@@ -3,6 +3,7 @@ use serde_with::serde_as;
 use serde_repr::Serialize_repr;
 use serde_repr::Deserialize_repr;
 use num_derive::FromPrimitive;
+use std::collections::HashMap;
 
 use crate::barter_lib::SafeU256;
 
@@ -199,6 +200,8 @@ pub mod fluid_dex_lite {
 pub mod balancer_v3_stable_surge {
     use alloy_primitives::Address;
 
+    use crate::balancer_lib::{TokenType, BufferState};
+
     use super::*;
 
     #[serde_as]
@@ -206,7 +209,7 @@ pub mod balancer_v3_stable_surge {
     #[serde(rename_all = "camelCase")]
     pub struct PoolInfo {
         pub address: Address,
-        pub tokens: Vec<Address>,  // Multi-token support
+        pub tokens: Vec<TokenType>,
         pub decimal_scaling_factors: Vec<SafeU256>,
         pub supports_unbalanced_liquidity: bool,
         pub hook_type: String,
@@ -225,6 +228,7 @@ pub mod balancer_v3_stable_surge {
         pub amp: SafeU256,
         pub max_surge_fee_percentage: SafeU256,
         pub surge_threshold_percentage: SafeU256,
+        pub buffer_states: HashMap<Address, BufferState>,
     }
 }
 
